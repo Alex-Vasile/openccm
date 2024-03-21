@@ -40,7 +40,9 @@ config_defaults: Dict = {
               'output_folder_path': 'output_ccm/',
               'tmp_folder_path': 'cache/',
               'log_folder_path': 'log/'},
-    'INPUT': {'min_magnitude_threshold': 0},
+    'INPUT': {'min_magnitude_threshold': 0,
+              'min_alpha_threshold': 0,
+              'openfoam_velocity_file_name': 'U'},
     'COMPARTMENTALIZATION': {'angle_threshold': 5,
                              'flow_threshold': 45},
     'COMPARTMENT MODELLING': {'flow_threshold': 1e-15,
@@ -194,13 +196,15 @@ class ConfigParser(configparser.ConfigParser):
             self['INPUT']['owner_file_path']     = openfoam_sol_folder_path + "constant/polyMesh/owner"
             self['INPUT']['neighbour_file_path'] = openfoam_sol_folder_path + "constant/polyMesh/neighbour"
             self['INPUT']['boundary_file_path']  = openfoam_sol_folder_path + "constant/polyMesh/boundary"
-            self['INPUT']['velocity_file_path']  = openfoam_sol_folder_path + sim_folder_to_use + "/U"
             if Path(openfoam_sol_folder_path + sim_folder_to_use + "/V").exists():  # OpenFOAM 10
                 self['INPUT']['volume_file_path'] = openfoam_sol_folder_path + sim_folder_to_use + "/V"
             elif Path(openfoam_sol_folder_path + sim_folder_to_use + "/Vc").exists():  # OpenFOAM 11
                 self['INPUT']['volume_file_path'] = openfoam_sol_folder_path + sim_folder_to_use + "/Vc"
             else:
                 raise FileNotFoundError("Could not find mesh cell size file V or Vc.")
+            self['INPUT']['velocity_file_path']  = openfoam_sol_folder_path + sim_folder_to_use + "/" + self['INPUT']['openfoam_velocity_file_name']
+            if 'openfoam_liquid_phase_fraction' in self['INPUT']:
+                self['INPUT']['alpha_file_path']    = openfoam_sol_folder_path + sim_folder_to_use + "/" + self['INPUT']['openfoam_liquid_phase_fraction']
 
         # NOTE: This one is left as relative to `output_folder_path` because of its final use in the .PVD file
         vtu_folder_path = self.get_item(['POST-PROCESSING', 'vtu_dir'], str)

@@ -57,7 +57,7 @@ def run(config_parser_or_file: Union[ConfigParser, str]) -> Dict[str, int]:
     if config_parser.need_to_update_paths:
         config_parser.update_paths()
 
-    cache_info    = CacheInfo(config_parser)
+    cache_info          = CacheInfo(config_parser)
     OpenCMP             = config_parser.get('INPUT', 'opencmp_sol_file_path', fallback=None) is not None
     model               = config_parser.get_item(['COMPARTMENT MODELLING', 'model'], str)
     output_folder_path  = config_parser.get_item(['SETUP', 'output_folder_path'], str)
@@ -76,8 +76,9 @@ def run(config_parser_or_file: Union[ConfigParser, str]) -> Dict[str, int]:
 
     start = perf_counter_ns()
     if cache_info.already_made_cfd_processed_results:
-        dir_vec = np.load(cache_info.name_direction_vector)
-        vel_vec = np.load(cache_info.name_velocity_vector)
+        dir_vec     = np.load(cache_info.name_direction_vector)
+        vel_vec     = np.load(cache_info.name_velocity_vector)
+        phase_frac  = np.load(cache_info.name_phase_fraction)
 
         if cache_info.need_opencmp_mesh:
             with ngcore.TaskManager():
@@ -90,11 +91,13 @@ def run(config_parser_or_file: Union[ConfigParser, str]) -> Dict[str, int]:
         if OpenCMP:
             with ngcore.TaskManager():
                 mesh, n_gfu, dir_vec, vel_vec = load_opencmp_results(config_parser)
+                phase_frac = np.array([1])  # Use 1 to keep rest of the code the same.
                 n_gfu.Save(cache_info.name_direction_sol)
         else:
-            dir_vec, vel_vec = load_velocity_and_direction_openfoam(config_parser)
+            dir_vec, vel_vec, phase_frac = load_velocity_and_direction_openfoam(config_parser)
         np.save(cache_info.name_direction_vector, dir_vec)
         np.save(cache_info.name_velocity_vector,  vel_vec)
+        np.save(cache_info.name_phase_fraction,   phase_frac)
     timing_dict["Load Solution"] = perf_counter_ns() - start
 
     # Convert to CMesh
@@ -103,7 +106,7 @@ def run(config_parser_or_file: Union[ConfigParser, str]) -> Dict[str, int]:
         with open(cache_info.name_cmesh, 'rb') as handle:
             c_mesh: CMesh = pickle.load(handle)
     else:
-        c_mesh = convert_mesh(config_parser, ngsolve_mesh=mesh if OpenCMP else None)
+        c_mesh = convert_mesh(config_parser, phase_frac, ngsolve_mesh=mesh if OpenCMP else None)
         with open(cache_info.name_cmesh, 'wb') as handle:
             pickle.dump(c_mesh, handle, protocol=pickle.HIGHEST_PROTOCOL)
     timing_dict['Create CMesh'] = perf_counter_ns() - start
@@ -259,19 +262,22 @@ class CacheInfo:
             t0 = str(config_parser.get_list(['SIMULATION', 't_span'], float)[0])
         self.name_velocity_vector       = tmp_folder_path + 'vel_vec.npy'
         """Filename for saving the velocity vector in numpy format."""
-        self.name_flows_and_upwind      = tmp_folder_path + 'flows_and_upwind.npy'
+        self.name_phase_fraction        = tmp_folder_path + 'phase_frac.npy'
+        """Filename for saving the phase fraction data in numpy format."""
+        self.name_flows_and_upwind = tmp_folder_path + 'flows_and_upwind.npy'
         """Filename for saving the facet flows in numpy format."""
 
-        self.already_made_cfd_processed_results = isfile(self.name_direction_vector) \
-                                                  and isfile(self.name_velocity_vector) \
-                                                  and ((not OpenCMP or isfile(self.name_direction_sol))
-                                                       and isfile(self.name_refined_mesh)
-                                                       and ((OpenCMP and isfile(name_velocity_info))
+        self.already_made_cfd_processed_results =   isfile(self.name_direction_vector) \
+                                                    and isfile(self.name_velocity_vector) \
+                                                    and isfile(self.name_phase_fraction) \
+                                                    and ((not OpenCMP or isfile(self.name_direction_sol))
+                                                        and isfile(self.name_refined_mesh)
+                                                        and ((OpenCMP and isfile(name_velocity_info))
                                                             or (not OpenCMP
                                                                 and isfile(output_folder_path + t0 + '/velocity')
                                                                 and isfile(output_folder_path + t0 + '/director'))
                                                             )
-                                                       )
+                                                    )
 
         self.already_made_cmesh                 = isfile(self.name_cmesh)
         """Bool indicating if the CMesh has already been created and can be loaded instead of needing to be created."""

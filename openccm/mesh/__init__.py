@@ -16,7 +16,7 @@
 # You should have received a copy of the GNU Lesser General Public License along with OpenCCM. If not, see             #
 # <https://www.gnu.org/licenses/>.                                                                                     #
 ########################################################################################################################
-from typing import List, Tuple
+from typing import List, Tuple, Optional
 
 r"""
 The mesh module contains the intermediate mesh representation, CMesh, and the functions required to convert OpenFOAM
@@ -33,13 +33,14 @@ from .convert_openfoam import convert_mesh_openfoam
 from ..config_functions import ConfigParser
 
 
-def convert_mesh(config_parser: ConfigParser, ngsolve_mesh: Optional['ngsolve.Mesh']) -> CMesh:
+def convert_mesh(config_parser: ConfigParser, phase_frac, ngsolve_mesh: Optional['ngsolve.Mesh']) -> CMesh:
     """
 
 
     Parameters
     ----------
     * config_parser:    The OpenCCM ConfigParser from which to get the required info for conversion.
+    * phase_frac:       TODO
     * ngsolve_mesh:     The NGSolve mesh object to convert if using OpenCMP.
 
     Returns
@@ -47,10 +48,10 @@ def convert_mesh(config_parser: ConfigParser, ngsolve_mesh: Optional['ngsolve.Me
     * cmesh: Internal representation of the mesh inside ngsolve_mesh or pointed to by config_parser
     """
     if ngsolve_mesh is None:
-        return convert_mesh_openfoam(config_parser)
+        return convert_mesh_openfoam(config_parser, phase_frac)
     else:
         from .convert_ngsolve import convert_mesh_ngsolve  # Import here to NGSolve & OpenCMP dependencies optional
-        return convert_mesh_ngsolve(config_parser, ngsolve_mesh)
+        return convert_mesh_ngsolve(config_parser, phase_frac, ngsolve_mesh)
 
 
 def convert_velocities_to_flows(cmesh: CMesh, vel_vec: np.ndarray) -> np.ndarray:
