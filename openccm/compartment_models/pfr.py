@@ -898,8 +898,8 @@ def _fix_domain_boundary_connection_ordering(inlets_and_outlets:        List[Tup
                     else:
                         j_prev = j
                         while j != i_in:  # Sequentially shift connection ids to the right but leave positions alone
-                            io_at_j             = (inlets_and_outlets[j-1][0], inlets_and_outlets[j  ][1])
-                            io_at_j_minus_one   = (inlets_and_outlets[j  ][0], inlets_and_outlets[j-1][1])
+                            io_at_j             = (inlets_and_outlets[j  ][0], inlets_and_outlets[j-1][1])
+                            io_at_j_minus_one   = (inlets_and_outlets[j-1][0], inlets_and_outlets[j  ][1])
                             inlets_and_outlets[j]   = io_at_j
                             inlets_and_outlets[j-1] = io_at_j_minus_one
                             j -= 1
