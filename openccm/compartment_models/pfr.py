@@ -1170,7 +1170,7 @@ def connect_pfr_compartments(compartment_network:   Dict[int, Dict[int, Dict[int
 
             if final:
                 # Must have at least one inlet or outlet. Otherwise, something has gone horrible wrong.
-                assert len(compartment_connections) > 1
+                assert len(compartment_connections) >= 1
 
                 # Calculate average direction
                 avg_direction = np.mean(dir_vec[sorted(compartments[id_compartment])], 0)
