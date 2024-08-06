@@ -879,13 +879,13 @@ def _fix_domain_boundary_connection_ordering(inlets_and_outlets:        List[Tup
     * inlets_and_outlets: The re-ordered list of inlets and outlets
     """
     counter = Counter(compartment_connections.values())
-    if min(counter) < 0:
+    if min(counter) < 0:  # Domain boundaries are indicated with negative IDs, a negative minimum value means there is at least one domain boundary
         i_in = 0  # Insertion point were we move the next value
         i_out = len(inlets_and_outlets) - 1
         for id_other, count in counter.items():
-            if id_other >= 0:
+            if id_other >= 0:  # Domain boundary
                 continue
-            if count == 1:
+            if count == 1:  # More than one connection to it
                 continue
 
             print(f"Compartment {id_compartment} has multiple connections to domain inlet/outlet: {id_other}. Reordering as necessary.")
