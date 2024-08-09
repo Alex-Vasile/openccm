@@ -33,7 +33,7 @@ import numpy as np
 from ..config_functions import ConfigParser
 from ..mesh import CMesh, create_dof_to_element_map
 
-OPENFOAM_SCALAR_HEADER = """/*--------------------------------*- C++ -*----------------------------------*\\
+OPENFOAM_HEADER = """/*--------------------------------*- C++ -*----------------------------------*\\
   =========                 |
   \\\\      /  F ield         | OpenFOAM: The Open Source CFD Toolbox
    \\\\    /   O peration     | Website:  https://openfoam.org
@@ -43,7 +43,7 @@ OPENFOAM_SCALAR_HEADER = """/*--------------------------------*- C++ -*---------
 FoamFile
 {{
     format      ascii;
-    class       volScalarField;
+    class       {};
     location    "{}";
     object      {};
 }}
@@ -51,7 +51,7 @@ FoamFile
 
 dimensions      [0 0 0 0 0 0 0];
 
-internalField   nonuniform List<scalar> 
+internalField   nonuniform List<{}> 
 {}
 (
 """
@@ -114,6 +114,27 @@ def create_compartment_label_gfu(mesh: 'ngsolve.Mesh', compartments: Dict[int, S
 
     return gfu
 
+def output_vector_openfoam(cmesh: CMesh, config_parser: ConfigParser, vector: np.ndarray, vector_name: str) -> None:
+    """
+    Label each mesh element with the corresponding value in the velocity vector
+
+    Args:
+        cmesh:          CMesh to print values for.
+        config_parser:  OpenCCM ConfigParser.
+        vector:         Numpy array of size NxM where N is number of mesh elements and M is components of the array.
+        vector_name:    Name to use as a filename and to show up in Paraview.
+    """
+    time_0 = config_parser.get_list(['SIMULATION', 't_span'], float)[0]
+    output_file_name = str(time_0) + '/' + vector_name
+
+    output_folder_path = config_parser.get_item(['SETUP', 'output_folder_path'], str)
+    vtu_folder_path = config_parser.get_item(['POST-PROCESSING', 'vtu_dir'], str)
+    output_folder = output_folder_path + vtu_folder_path + output_file_name
+
+    # Create the output directory if it doesn't exist
+    Path(output_folder_path + vtu_folder_path + str(time_0)).mkdir(parents=True, exist_ok=True)
+
+    write_buffer_to_file_openfoam(vector, output_folder, time_0, vector_name, cmesh)
 
 def label_elements_openfoam(cmesh: CMesh, config_parser: ConfigParser) -> None:
     """
@@ -293,10 +314,21 @@ def export_to_vtu_openfoam(
 
 
 def write_buffer_to_file_openfoam(buffer: np.ndarray, output_file_path: str, t: float, variable_name: str, cmesh: CMesh) -> None:
-    with open(output_file_path, 'w') as output_file:
-        output_file.write(OPENFOAM_SCALAR_HEADER.format(t, variable_name, len(buffer)))
+    if buffer.ndim not in [1, 2]:
+        raise ValueError(f'Unexpected dimensionality ({buffer.ndim}) for buffer')
+    def line_to_str(buffer_line: np.ndarray) -> str:
+        if buffer_line.ndim == 0:
+            return str(buffer_line)
+        else:
+            return '(' + ' '.join(str(val) for val in buffer_line)  + ')'
 
-        output_file.write('\n'.join(str(entry) for entry in buffer))
+    value_class = 'volScalarField'  if buffer.ndim == 1 else 'volVectorField'
+    value_type  = 'scalar'          if buffer.ndim == 1 else 'vector'
+
+    with open(output_file_path, 'w') as output_file:
+        output_file.write(OPENFOAM_HEADER.format(value_class, t, variable_name, value_type, len(buffer)))
+
+        output_file.write('\n'.join(line_to_str(line) for line in buffer))
 
         output_file.write(
             ")\n"
@@ -309,7 +341,7 @@ def write_buffer_to_file_openfoam(buffer: np.ndarray, output_file_path: str, t: 
         for bc_name, facets in cmesh.bc_to_facet_map.items():
             facet_concentration_values = []
             for facet in facets:
-                facet_concentration_values.append(f"{buffer[cmesh.facet_elements[facet][0]]}\n")
+                facet_concentration_values.append(line_to_str(buffer[cmesh.facet_elements[facet][0]]) + "\n")
 
             facet_concentrations = '\t\t\t'.join(facet_concentration_values)
 
@@ -317,7 +349,7 @@ def write_buffer_to_file_openfoam(buffer: np.ndarray, output_file_path: str, t: 
                               f"\t{bc_name}\n"
                               f"\t{{\n"
                               f"\t\ttype            calculated;\n"
-                              f"\t\tvalue           nonuniform List<scalar>\n"
+                              f"\t\tvalue           nonuniform List<{value_type}>\n"
                               f"\t\t{len(facets)}\n"
                               f"\t\t(\n"
                               f"\t\t\t{facet_concentrations}"

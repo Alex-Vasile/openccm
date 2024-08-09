@@ -31,6 +31,7 @@ from .io import load_velocity_and_direction_openfoam
 from .mesh import CMesh, convert_mesh, convert_velocities_to_flows
 from .postprocessing import convert_to_vtu_and_save, create_element_label_gfu, create_compartment_label_gfu, label_compartments_openfoam, \
                             label_elements_openfoam, label_models_and_dof_openfoam, network_to_rtd, plot_results, visualize_model_network
+from .postprocessing.vtu_output import output_vector_openfoam
 from .system_solvers import solve_system
 
 
@@ -106,6 +107,10 @@ def run(config_parser_or_file: Union[ConfigParser, str]) -> Dict[str, int]:
         with open(cache_info.name_cmesh, 'wb') as handle:
             pickle.dump(c_mesh, handle, protocol=pickle.HIGHEST_PROTOCOL)
     timing_dict['Create CMesh'] = perf_counter_ns() - start
+
+    if not cache_info.already_made_cfd_processed_results:
+        output_vector_openfoam(c_mesh, config_parser, vel_vec, 'velocity')
+        output_vector_openfoam(c_mesh, config_parser, dir_vec, 'direction')
 
     # Calculate facet flow_rates
     if cache_info.already_made_flows_and_upwind_file:
@@ -226,7 +231,6 @@ class CacheInfo:
         output_VTK          = config_parser.get_item(['POST-PROCESSING',        'output_VTK'],          bool)
         tmp_folder_path     = config_parser.get_item(['SETUP',                  'tmp_folder_path'],     str)
         output_folder_path  = config_parser.get_item(['SETUP',                  'output_folder_path'],  str)
-
         OpenCMP             = config_parser.get('INPUT', 'opencmp_sol_file_path', fallback=None) is not None
 
         self.name_cmesh                 = tmp_folder_path + 'cmesh.pickle'
@@ -247,8 +251,10 @@ class CacheInfo:
         """Filename for saving the PFR/CSTR network."""
         self.name_refined_mesh          = tmp_folder_path + 'sim_fine.vol'
         """Filename for saving the refined OpenCMP mesh."""
-        self.name_velocity_info         = output_folder_path + 'velocity_info.vtu'
-        """Filename for saving the velocity for visualization."""
+        if OpenCMP:
+            name_velocity_info          = output_folder_path + 'velocity_info.vtu'
+        else:  # OpenFOAM
+            t0 = str(config_parser.get_list(['SIMULATION', 't_span'], float)[0])
         self.name_velocity_vector       = tmp_folder_path + 'vel_vec.npy'
         """Filename for saving the velocity vector in numpy format."""
         self.name_flows_and_upwind      = tmp_folder_path + 'flows_and_upwind.npy'
@@ -256,9 +262,14 @@ class CacheInfo:
 
         self.already_made_cfd_processed_results = isfile(self.name_direction_vector) \
                                                   and isfile(self.name_velocity_vector) \
-                                                  and (not OpenCMP or isfile(self.name_direction_sol)
+                                                  and ((not OpenCMP or isfile(self.name_direction_sol))
                                                        and isfile(self.name_refined_mesh)
-                                                       and isfile(self.name_velocity_info))
+                                                       and ((OpenCMP and isfile(name_velocity_info))
+                                                            or (not OpenCMP
+                                                                and isfile(output_folder_path + t0 + '/velocity')
+                                                                and isfile(output_folder_path + t0 + '/director'))
+                                                            )
+                                                       )
 
         self.already_made_cmesh                 = isfile(self.name_cmesh)
         """Bool indicating if the CMesh has already been created and can be loaded instead of needing to be created."""
@@ -266,9 +277,16 @@ class CacheInfo:
         """Bool indicating if the compartments have already been created and can be loaded rather than neeing to be created."""
         self.already_made_compartment_network   = isfile(self.name_compartment_network) and isfile(self.name_compartments_post)
         """Bool indicating if the compartment network has already been created and can be loaded rather than needing to be created."""
+        if OpenCMP:
+            self.already_made_cm_info_vtu       = isfile(self.name_model_info + '.vtu')
+            """Bool indicating if the model visualization has already been created."""
+        else:
+            self.already_made_cm_info_vtu       = (isfile(output_folder_path + t0 + '/compartments_post')
+                                                   and isfile(output_folder_path + t0 + '/compartments_pre')
+                                                   and isfile(output_folder_path + t0 + '/dof_labels')
+                                                   and isfile(output_folder_path + t0 + '/element_labels'))
+            """Bool indicating if the model visualization has already been created."""
 
-        self.already_made_cm_info_vtu           = isfile(self.name_model_info + '.vtu')
-        """Bool indicating if the model visualization has already been created."""
         self.already_made_model_network         = isfile(self.name_model_network)
         """Bool indicating if the model network has already been created and can be loaded instead of needing to be created."""
         self.already_made_flows_and_upwind_file = isfile(self.name_flows_and_upwind)
