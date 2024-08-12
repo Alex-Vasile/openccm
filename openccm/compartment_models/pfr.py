@@ -104,7 +104,7 @@ def create_pfr_network(compartments:        Dict[int, Set[int]],
     # 1. Create connections between compartments
     ####################################################################################################################
     # 1.1 Initial connections
-    results_1 = connect_pfr_compartments(compartment_network, compartments, mesh, dir_vec, flows_and_upwind, True, config_parser)
+    results_1 = connect_pfr_compartments(compartment_network, compartments, mesh, dir_vec, flows_and_upwind, 2, config_parser)
     id_next_connection, connection_distances, element_distances, connection_pairing, compartment_network, _volumetric_flows = results_1
     check_network_for_disconnected_subgraphs(connection_pairing)
 
@@ -956,7 +956,7 @@ def connect_pfr_compartments(compartment_network:   Dict[int, Dict[int, Dict[int
                              mesh:                  CMesh,
                              dir_vec:               np.ndarray,
                              flows_and_upwind:      np.ndarray,
-                             final:                 bool,
+                             check_level:           int,
                              config_parser:         ConfigParser) \
         -> Tuple[
             int,
@@ -998,9 +998,11 @@ def connect_pfr_compartments(compartment_network:   Dict[int, Dict[int, Dict[int
                             - 2nd column is a flag indicating which of a facet's elements are upwind of it.
                                 - 0, and 1 represent the index into mesh.facet_elements[facet]
                                 - -1 is used for boundary elements to represent
-    * final:                If asserts and all calculations should be performed.
-                            This is set to False when function is called from merge_compartments since some may
-                            be too small for the invariants to be true.
+    * check_level:          == 0 : No checks or asserts
+                            == 1 : Check flow but no asserts
+                            == 2 : Check flow and use asserts
+                            Values of 0 and 1 are used by `merge_compartments` since some may be too small for
+                            the invariants to be true until merging is done.
     * config_parser:        The OpenCCM ConfigParser
 
     Returns
@@ -1050,7 +1052,7 @@ def connect_pfr_compartments(compartment_network:   Dict[int, Dict[int, Dict[int
     #   The weighting is the fraction of the total flux that comes through each facet
     #   The position of each facet is the mean of all of its vertices
     centers_of_flow_for_connection: Dict[int, np.ndarray] = dict()
-    with open(log_folder_path + 'connect' + ('' if final else '_for_merge') + '.txt', 'w') as logging:
+    with open(log_folder_path + 'connect' + ('' if check_level == 2 else '_for_merge') + '.txt', 'w') as logging:
         # Calculate the number of connections between compartments and their locations
         for id_compartment in compartment_network:
             # Inlets and outlets for this compartment.
@@ -1105,14 +1107,14 @@ def connect_pfr_compartments(compartment_network:   Dict[int, Dict[int, Dict[int
                     ###
                     # 3. If it's below the total flow threshold, delete this connection and stop.
                     ###
-                    if final and np.abs(total_flow) < flow_threshold:
+                    if check_level >= 1 and np.abs(total_flow) < flow_threshold:
                         continue
 
                     ###
                     # 4. Mark and remove all facets which are below the individual flow threshold.
                     ###
                     for facet in list(flow_through_facet.keys()):
-                        if final and np.abs(flow_through_facet[facet]) < flow_threshold_facet:
+                        if check_level >= 1 and np.abs(flow_through_facet[facet]) < flow_threshold_facet:
                             flow_through_facet.pop(facet)
 
                     ###
@@ -1145,7 +1147,7 @@ def connect_pfr_compartments(compartment_network:   Dict[int, Dict[int, Dict[int
                     flow_through_surfaces: Dict[int, float] = {}
                     for i, surface in enumerate(surfaces):
                         _flow = sum(flow_through_facet[id_facet] for id_facet in surface) * total_flow / total_flow_thresholded
-                        if not final or abs(_flow) >= flow_threshold:
+                        if check_level == 0 or abs(_flow) >= flow_threshold:
                             flow_through_surfaces[i] = _flow
                         else:
                             pass
@@ -1156,7 +1158,7 @@ def connect_pfr_compartments(compartment_network:   Dict[int, Dict[int, Dict[int
                     ###
                     for i, flowrate in flow_through_surfaces.items():
                         volumetric_flows[id_of_next_connection] = abs(flowrate)
-                        if final:
+                        if check_level >= 1:
                             center_of_flow = np.sum([abs(flow_through_facet[facet]) * mesh.facet_centers[facet] for facet in surfaces[i]], 0)
                             center_of_flow /= abs(flow_through_surfaces[i])
 
@@ -1168,7 +1170,7 @@ def connect_pfr_compartments(compartment_network:   Dict[int, Dict[int, Dict[int
                             compartment_connections[-id_of_next_connection] = neighbour
                         id_of_next_connection += 1
 
-            if final:
+            if check_level == 2:
                 # Must have at least one inlet or outlet. Otherwise, something has gone horrible wrong.
                 assert len(compartment_connections) >= 1
 
@@ -1219,7 +1221,7 @@ def connect_pfr_compartments(compartment_network:   Dict[int, Dict[int, Dict[int
 
     print("Done finding connections between compartments")
 
-    if final:
+    if check_level == 2:
         for connection, flow in volumetric_flows.items():
             if flow < flow_threshold:
                 raise ValueError(f"Connection {connection} has a flowrate ({flow}) below the threshold ({flow_threshold})")
