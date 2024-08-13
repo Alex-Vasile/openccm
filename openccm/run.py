@@ -31,7 +31,7 @@ from .io import load_velocity_and_direction_openfoam
 from .mesh import CMesh, convert_mesh, convert_velocities_to_flows
 from .postprocessing import convert_to_vtu_and_save, create_element_label_gfu, create_compartment_label_gfu, label_compartments_openfoam, \
                             label_elements_openfoam, label_models_and_dof_openfoam, network_to_rtd, plot_results, visualize_model_network
-from .postprocessing.vtu_output import output_vector_openfoam
+from .postprocessing.vtu_output import output_vector_openfoam, output_compartment_average_direction_vector
 from .system_solvers import solve_system
 
 
@@ -134,6 +134,7 @@ def run(config_parser_or_file: Union[ConfigParser, str]) -> Dict[str, int]:
         if OpenCMP:
             compartment_labels_pre_gfu = create_compartment_label_gfu(mesh, compartments_pre)
         else:
+            output_compartment_average_direction_vector(c_mesh, config_parser, compartments_pre, dir_vec, 'direction_avg_pre')
             label_compartments_openfoam('compartments_pre', compartments_pre, config_parser)
 
     # Turn the compartments into a network
@@ -181,6 +182,7 @@ def run(config_parser_or_file: Union[ConfigParser, str]) -> Dict[str, int]:
                           ).Do()
         else:
             label_elements_openfoam(c_mesh, config_parser)
+            output_compartment_average_direction_vector(c_mesh, config_parser, compartments_post, dir_vec,'direction_avg_post')
             label_compartments_openfoam('compartments_post', compartments_post, config_parser)
             label_models_and_dof_openfoam(c_mesh, model_network[-1], config_parser)
 
@@ -284,7 +286,9 @@ class CacheInfo:
             self.already_made_cm_info_vtu       = (isfile(output_folder_path + t0 + '/compartments_post')
                                                    and isfile(output_folder_path + t0 + '/compartments_pre')
                                                    and isfile(output_folder_path + t0 + '/dof_labels')
-                                                   and isfile(output_folder_path + t0 + '/element_labels'))
+                                                   and isfile(output_folder_path + t0 + '/element_labels')
+                                                   and isfile(output_folder_path + t0 + '/direction_avg_pre')
+                                                   and isfile(output_folder_path + t0 + '/direction_avg_post'))
             """Bool indicating if the model visualization has already been created."""
 
         self.already_made_model_network         = isfile(self.name_model_network)

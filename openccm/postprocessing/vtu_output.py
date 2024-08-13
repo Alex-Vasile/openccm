@@ -114,6 +114,15 @@ def create_compartment_label_gfu(mesh: 'ngsolve.Mesh', compartments: Dict[int, S
 
     return gfu
 
+def output_compartment_average_direction_vector(cmesh: CMesh, config_parse: ConfigParser, compartments, dir_vec: np.ndarray, vector_name: str):
+    dir_vec_avg = -np.ones_like(dir_vec)
+    for compartment, element_IDs in compartments.items():
+        dir_vec_avg[list(element_IDs), :] = np.mean(dir_vec[list(element_IDs), :], axis=0)
+    magnitude = np.linalg.norm(dir_vec_avg, axis=1)[..., np.newaxis]
+    dir_vec_avg /= magnitude
+
+    output_vector_openfoam(cmesh, config_parse, dir_vec_avg, vector_name)
+
 def output_vector_openfoam(cmesh: CMesh, config_parser: ConfigParser, vector: np.ndarray, vector_name: str) -> None:
     """
     Label each mesh element with the corresponding value in the velocity vector
