@@ -38,9 +38,9 @@ from .helper_functions import H
 BC_TEMPLATE = "@njit(inline='always', cache=True)\n" + \
               "def {}(t):\n" + \
               "    return {}\n"
-"""Template for generating the boudnary condition file."""
+"""Template for generating the boundary condition file."""
 SYMPY_EQN_ARGS = [x, y, z, t]
-"""TODO"""
+"""Variables usable by sympy for spatially- or time-varying equations."""
 
 
 def create_boundary_conditions(c0:                  np.ndarray,
@@ -70,18 +70,21 @@ def create_boundary_conditions(c0:                  np.ndarray,
 
     Parameters
     ----------
-    * c0:               The initial condition, needed in order to properly implement boundary conditions for PFR models.
-                        The BC will override the IC value for the BC nodes.
-    * config_parser:    OpenCCM ConfigParser for getting settings.
-    * Q_weights:        Mapping between BC ID and a list of weights
-                        The entries for each boundary condition MUST be in the same order as points_for_bc.
-    * points_for_bc:    Mapping between boundary ID and the index into the state array.
-                        Entries for each BC MUST be in the same order as Q_weights.
-    * t0:               The starting time, needed for updating c0 if using a PFR model.
-    * points_per_model: Number of discretization points per model. A value of 1 is assumed to represent a CSTR.
-    * cmesh:
-    * dof_to_element_map:
-    * model_volumes:        TODO
+    * c0:                   The initial condition, needed in order to properly implement boundary conditions for PFR models.
+                            The BC will override the IC value for the BC nodes.
+    * config_parser:        OpenCCM ConfigParser for getting settings.
+    * Q_weights:            Mapping between BC ID and a list of weights
+                            The entries for each boundary condition MUST be in the same order as points_for_bc.
+    * points_for_bc:        Mapping between boundary ID and the index into the state array.
+                            Entries for each BC MUST be in the same order as Q_weights.
+    * t0:                   The starting time, needed for updating c0 if using a PFR model.
+    * points_per_model:     Number of discretization points per model. A value of 1 is assumed to represent a CSTR.
+    * cmesh:                The CMesh from which the model being simulated was derived.
+    * dof_to_element_map:   Mapping between degree of freedom and the ordered lists of tuples representing the elements
+                            that this dof maps to. Tuple contains (element ID, dof_other, weight_this).
+                            dof_other and weight_this are used for a linear interpolation of value between the value of
+                            this dof and the nearest (dof_other).
+    * model_volumes:        The volume of each PFR/CSTR, indexed by their ID.
     """
     def get_bc_id(_bc_name: str) -> int:
         if 'point' in _bc_name:

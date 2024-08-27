@@ -27,13 +27,14 @@ from ..config_functions import ConfigParser
 from ..io import read_boundary_condition, read_mesh_data
 
 
-def convert_mesh_openfoam(config_parser: ConfigParser, phase_frac: Optional[np.ndarray]) -> CMesh:
+def convert_mesh_openfoam(config_parser: ConfigParser, phase_frac: np.ndarray) -> CMesh:
     """
     Read OpenFOAM mesh information from file and convert it into OpenCCM's internal CMesh format.
 
     Parameters
     ----------
-    * config_parser:  OpenCCM ConfigParser from which to get the required OpenFOAM data.
+    * config_parser:    OpenCCM ConfigParser from which to get the required OpenFOAM data.
+    * phase_frac:       Fraction of each mesh element taken up by the phase we wish to compartmentalize.
 
     Returns
     -------

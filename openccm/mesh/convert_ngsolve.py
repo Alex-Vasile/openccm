@@ -29,14 +29,15 @@ from .cmesh import CMesh, GroupedBCs
 from ..config_functions import ConfigParser
 
 
-def convert_mesh_ngsolve(config_parser: ConfigParser, phase_frac: Optional[np.ndarray], mesh: 'ngsolve.Mesh') -> CMesh:
+def convert_mesh_ngsolve(config_parser: ConfigParser, phase_frac: np.ndarray, mesh: 'ngsolve.Mesh') -> CMesh:
     """
     Main function for converting the NGSolve mesh object into a CMesh object.
 
     Parameters
     ----------
-    * config_parser:  The OpenCCM ConfigParser.
-    * mesh:           The NGSolve mesh to convert into a CMesh.
+    * config_parser:    The OpenCCM ConfigParser.
+    * phase_frac:       Fraction of each mesh element taken up by the phase we wish to compartmentalize.
+    * mesh:             The NGSolve mesh to convert into a CMesh.
 
     Returns
     -------

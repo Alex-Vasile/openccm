@@ -89,26 +89,27 @@ def load_and_prepare_bc_ic_and_rxn(config_parser:               ConfigParser,
                                    points_for_bc:               Dict[int, List[int]],
                                    t0:                          float,
                                    model_to_element_map:        List[List[Tuple[float, int]]],
-                                   connected_to_another_inlet:  Optional[np.ndarray]=None,
-                                   Q_weight:                    Optional[np.ndarray]=None
+                                   connected_to_another_inlet:  Optional[np.ndarray] = None,
+                                   Q_weight:                    Optional[np.ndarray] = None
                                    ) -> Tuple[Callable, Callable, np.ndarray]:
     """
     Wrapper function for creating the initial condition array and applying the initial and boundary conditions to it.
 
     Parameters
     ----------
-    * config_parser:        OpenCCM ConfigParser used for getting settings.
-    * c_shape:              The shape for the concentration array at each timestep (num_species, num_points).
-    * points_per_model:     Number of discretization points per model (1 for CSTR, >2 for PFR).
-    * _ddt_reshape_shape:   Shape needed by _ddt for PFR systems so that the inlet node does not have a reaction
-                            occurring at it. Used by `generate_reaction_system`.
-    * cmesh:                The CMesh from which the model being simulated was derived.
-    * Q_weight_inlets:      Lookup all Q_connection / Q_reactor_total for each inlet BC connection.
-    * model_volumes:        TODO
-    * points_for_bc:        Lookup for all discretization points on an inlet BC, index by BC ID. Same ordering as Q_weight_inlets.
-    * t0:                   Initial timestep, needed in order to evaluate the BCs at the first timestep if a PFR is used.
-    * model_to_element_map: TODO
-    * connected_to_another_inlet: For a PFR network, this specif
+    * config_parser:                OpenCCM ConfigParser used for getting settings.
+    * c_shape:                      The shape for the concentration array at each timestep (num_species, num_points).
+    * points_per_model:             Number of discretization points per model (1 for CSTR, >2 for PFR).
+    * _ddt_reshape_shape:           Shape needed by _ddt for PFR systems so that the inlet node does not have a reaction
+                                    occurring at it. Used by `generate_reaction_system`.
+    * cmesh:                        The CMesh from which the model being simulated was derived.
+    * Q_weight_inlets:              Lookup all Q_connection / Q_reactor_total for each inlet BC connection.
+    * model_volumes:                The volume of each PFR/CSTR, indexed by their ID.
+    * points_for_bc:                Lookup for all discretization points on an inlet BC, index by BC ID. Same ordering as Q_weight_inlets.
+    * t0:                           Initial timestep, needed in order to evaluate the BCs at the first timestep if a PFR is used.
+    * model_to_element_map:         Mapping between model ID and a list of ordered tuples (distance_in_model, element ID)
+    * connected_to_another_inlet:   For a PFR network, this specif
+    * Q_weight:
 
     Returns
     -------

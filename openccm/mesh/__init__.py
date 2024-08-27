@@ -33,14 +33,14 @@ from .convert_openfoam import convert_mesh_openfoam
 from ..config_functions import ConfigParser
 
 
-def convert_mesh(config_parser: ConfigParser, phase_frac, ngsolve_mesh: Optional['ngsolve.Mesh']) -> CMesh:
+def convert_mesh(config_parser: ConfigParser, phase_frac: np.ndarray, ngsolve_mesh: Optional['ngsolve.Mesh']) -> CMesh:
     """
-
+    Helper function for cleaing up call site
 
     Parameters
     ----------
     * config_parser:    The OpenCCM ConfigParser from which to get the required info for conversion.
-    * phase_frac:       TODO
+    * phase_frac:       Fraction of each mesh element taken up by the phase we wish to compartmentalize.
     * ngsolve_mesh:     The NGSolve mesh object to convert if using OpenCMP.
 
     Returns
@@ -103,7 +103,7 @@ def create_dof_to_element_map(model_to_element_map: List[List[Tuple[float, int]]
     to the element.
 
     Args:
-        model_to_element_map:   Mapping between model ID and a list of ordered tuples (distance_in_model, element ID)/
+        model_to_element_map:   Mapping between model ID and a list of ordered tuples (distance_in_model, element ID)
         points_per_model:       Number of discretization points per model. 1 for CSTRs, >1 for PFRs.
 
     Returns:
