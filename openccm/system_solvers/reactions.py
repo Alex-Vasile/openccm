@@ -137,7 +137,7 @@ def organize_reactions_input(specie_order: List[str], all_reactions: List[str], 
         del rxn_ids, rxn_rxns
 
     # Prepare rate constants by separating from reaction IDs (i.e. 'R1: 5' --> '5')
-    rate_vals = [rate.split(':')[1].strip() for rate in all_rates]
+    rate_vals = [rate.split(':')[1].replace(' ', '') for rate in all_rates]
 
     # Create rate dictionary with appropriate reaction IDs
     rate_book = dict(zip((rate_ids), (rate_vals)))
@@ -152,8 +152,12 @@ def organize_reactions_input(specie_order: List[str], all_reactions: List[str], 
         rxn_book[curr_key].append(rxn.split(':')[1].strip())
 
         # Check #5 - rate constant must be a number. Note that since we also allow 'AeB' format (A x 10^B) then we need a try/except since isnumeric() and isdigit() will not work.
-        try: 
-            float(rate_book.get(curr_key))
+        try:
+            rate = rate_book.get(curr_key)
+            if rate[:2] == 'z=':  # 0th order reaction
+                float(rate[2:])
+            else:
+                float(rate)
         except Exception as e:
             raise ValueError(f"{e}. Please check that rate constants are numeric in reactions config.")
         # If rate constant is numeric, then append to reaction book
@@ -259,14 +263,22 @@ def parse_reactions(specie_order: List[str], rxn_book: Dict[str, List[str]]) -> 
         counter = 0
         while counter < len(reactantString[0::2]):
             DEsysLHS = np.append(DEsysLHS, 'd' + reactantString[1::2][counter])
-            DEsysRHS = np.append(DEsysRHS, '-' + reactantString[0::2][counter] + f'*{rxn_info[1]}*' + '*'.join([i + '**' + j for i, j in zip(reactantString[1::2], reactantString[0::2]) ]))
+            rate = rxn_info[1]
+            if rate[:2] == 'z=':  # 0th order reaction
+                DEsysRHS = np.append(DEsysRHS, '-' + reactantString[0::2][counter] + '*' + rate[2:])
+            else:
+                DEsysRHS = np.append(DEsysRHS, '-' + reactantString[0::2][counter] + f'*{rxn_info[1]}*' + '*'.join([i + '**' + j for i, j in zip(reactantString[1::2], reactantString[0::2]) ]))
             counter += 1
 
         # Create both the lhs and rhs of differential equation reaction system for the products:
         counter = 0
         while counter < len(productString[0::2]):
             DEsysLHS = np.append(DEsysLHS, 'd' + productString[1::2][counter])
-            DEsysRHS = np.append(DEsysRHS, productString[0::2][counter] + f'*{rxn_info[1]}*' + '*'.join([i + '**' + j for i, j in zip(reactantString[1::2], reactantString[0::2]) ]))
+            rate = rxn_info[1]
+            if rate[:2] == 'z=':  # 0th order reaction
+                DEsysRHS = np.append(DEsysRHS, reactantString[0::2][counter] + '*' + rate[2:])
+            else:
+                DEsysRHS = np.append(DEsysRHS, productString[0::2][counter] + f'*{rxn_info[1]}*' + '*'.join([i + '**' + j for i, j in zip(reactantString[1::2], reactantString[0::2]) ]))
             counter += 1
 
     # Combine duplicate entries (i.e. 2 statements for dA, should be added to get total differential equation).
