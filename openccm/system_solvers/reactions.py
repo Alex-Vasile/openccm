@@ -23,15 +23,16 @@ for the simulations.
 """
 
 import inspect
-from string import ascii_lowercase as alphabet
+from pyparsing import Combine, Group, Literal, ParseResults, Suppress, Word, ZeroOrMore, nums
 from typing import List, Dict, Optional, Tuple
 
+from ..config_functions import ConfigParser
+
 import numpy as np
-import pyparsing as pp
 import sympy as sp
 
 
-def generate_reaction_system(config_parser: 'ConfigParser', _ddt_reshape_shape: Optional[Tuple[int, int, int]]) -> None:
+def generate_reaction_system(config_parser: ConfigParser, _ddt_reshape_shape: Optional[Tuple[int, int, int]]) -> None:
     """
     Main function that handles support for systems of chemical reactions. In order, this function:
     1. Performs an initial parsing of the reactions configuration file based on the two main headers, [REACTIONS] and [RATES].
@@ -83,10 +84,10 @@ def generate_reaction_system(config_parser: 'ConfigParser', _ddt_reshape_shape: 
         all_rates = [rate.strip() for rate in all_rates if rate.strip()]
 
         # Get a dictionary with all reaction information first 
-        rxn_book = organize_reactions_input(rxn_species, all_reactions, all_rates)
+        rxn_book, dummy_map = organize_reactions_input(rxn_species, all_reactions, all_rates)
 
         # Send all reaction and rate information into parser to create system of equations
-        reaction_eqns = parse_reactions(rxn_species, rxn_book)
+        reaction_eqns = parse_reactions(dummy_map, rxn_book)
 
     # Otherwise, run a tracer experiment (species present but no chemical reactions occur)
     else:
@@ -96,7 +97,11 @@ def generate_reaction_system(config_parser: 'ConfigParser', _ddt_reshape_shape: 
     create_reaction_code(rxn_species, reaction_eqns, rxn_file_path, _ddt_reshape_shape)
 
 
-def organize_reactions_input(specie_order: List[str], all_reactions: List[str], all_rates: List[str]) -> Dict[str, List[str]]:
+def organize_reactions_input(specie_order: List[str], all_reactions: List[str], all_rates: List[str]) \
+        -> Tuple[
+            Dict[str, List[str]],
+            Dict[str, str]
+           ]:
     """
     This function first performs several checks to ensure that the reactions config file was handled correctly by the user. 
     If successful, it breaks down the provided reactions and rates into an organized dictionary where each key is a reaction ID and the values are a length 2 list, where list is [reaction, rate].
@@ -111,7 +116,8 @@ def organize_reactions_input(specie_order: List[str], all_reactions: List[str], 
 
     Returns
     -------
-    * rxn_book: A dictionary that contains each reaction and their chemical species / rate constants.
+    * rxn_book:     A dictionary that contains each reaction and their chemical species / rate constants.
+    * dummy_map:    Mapping between original specie name and internal dummy name
     """ 
 
     # Parse the reaction ids (i.e. R1, R2 etc) from the actual reactions and associated rates. These are needed for proper input checking.
@@ -164,8 +170,7 @@ def organize_reactions_input(specie_order: List[str], all_reactions: List[str], 
         rxn_book[curr_key].append(rate_book.get(curr_key))
 
     # Create mapping of species to dummy specie names which is much easier for parsing process
-    specie_order_dummy = list(alphabet[0:len(specie_order)])
-    dummy_map = dict(zip(specie_order, specie_order_dummy))
+    dummy_map = {specie_order[i]: f"#{i}#" for i in range(len(specie_order))}
     rxn_book_keys = list(rxn_book.keys())
     for key in rxn_book_keys:
         # get current reaction
@@ -177,10 +182,10 @@ def organize_reactions_input(specie_order: List[str], all_reactions: List[str], 
         # assign transformed reaction back to master reaction book
         rxn_book[key][0] = rxn
 
-    return rxn_book
+    return rxn_book, dummy_map
 
 
-def parse_reactions(specie_order: List[str], rxn_book: Dict[str, List[str]]) -> List[str]:
+def parse_reactions(dummy_map: Dict[str, str], rxn_book: Dict[str, List[str]]) -> List[str]:
     """
     Parses all reactions and rates and creates the differential reaction system of equations.
     Also enforces specific ordering of system of equations based on species in specie_order (i.e. from main config file).
@@ -207,8 +212,8 @@ def parse_reactions(specie_order: List[str], rxn_book: Dict[str, List[str]]) -> 
 
     Parameters
     ----------
-    * specie_order: The ordered species as written in the main configuration file.
-                    Must match the same types of species present in reactions config file.
+    * dummy_map: Mapping between real specie name and dummy name used for parsing.
+                    Order of keys must match that of species present in reactions config file.
     * rxn_book:     A dictionary that contains each reaction and their chemical species / rate constants.
 
     Returns
@@ -216,112 +221,106 @@ def parse_reactions(specie_order: List[str], rxn_book: Dict[str, List[str]]) -> 
     * reaction_eqns:    List containing the system of differential equations in the same order of species
                         as they appear in specie_order. I.e. if specie_order = [a, b] --> reaction_eqns = [da/dt, db/dt].
     """
+
+    def to_dict(rxn_parsed: ParseResults) -> Dict[str, str]:
+        """
+        Convert the pyparsing result into a dictionary.
+        Supports one of two formats for each item in rxn_parsed:
+        1. Explicit coefficient: ['a', 'A']
+        2. Implicit coefficient: ['A']
+
+        where:
+        - A: A chemical specie in the reaction
+        - a: coefficient for specie A
+
+        When converting to the dictionary version all implicit coefficients will be made explicit using a value of '1'.
+
+        Parameters
+        ----------
+        rxn_parsed: Pyparsing result with potential implicit coefficients
+
+        Returns
+        -------
+        * rxn_dict: Mapping between specie and its coefficient.
+        """
+
+        rxn_dict = {}
+        for term in rxn_parsed:
+            if len(term) == 1:  # Implicit coefficient
+                rxn_dict[term[0]] = '1'
+            else:  # Explicit coefficient
+                rxn_dict[term[1]] = term[0]
+
+        return rxn_dict
+
+    def update_lhs_rhs(side_dict: Dict[str, str], reactants_dict: Dict[str, str], rate_const: str, de_eqn: Dict[str, str], negative_sign: bool) -> None:
+        """
+        Convert the species, coefficients, and reaction rate
+
+        Parameters
+        ----------
+        side_dict:      The mapping between species and their stoichiometric coefficients for this half of the reaction.
+        reactant_dict:  The mapping between species and their stoichiometric coefficients for the reactants of this reaction.
+        rate_const:     The rate constant for this reaction.
+        lhs:            The left hand side of the differential equation system. d_specie / dt.
+        rhs:            The contribution to the right hand side of the differential equation system built from.
+        negative_sign:  Whether a netgative sign needs to be added to the rate, such as for products.
+
+        Returns
+        -------
+        * Nothing. `lhs` and `rhs` are updated in-place.
+        """
+        sign = '-' if negative_sign else '+'
+
+        for specie, coeff in side_dict.items():
+            if specie not in de_eqn.keys():
+                de_eqn[specie] = ''
+
+            if rate_const[:2] == 'z=':  # 0th order reaction
+                de_eqn[specie] += sign + coeff + '*' + rate_const[2:]
+            else:
+                rxn_rate = '*'.join([_s + '**' + _c for _s, _c in reactants_dict.items()])
+                de_eqn[specie] += sign + coeff + '*' + rate_const + '*' + rxn_rate
+
     # The following pyparsing structure outlines the expected reaction structure from reactions config file.
-    rxnType = pp.ZeroOrMore(pp.Literal('->')) 
-    molecule_with_coeff = pp.ZeroOrMore(pp.Word(pp.nums, '.'+pp.nums))
-    all_molecules = molecule_with_coeff + pp.Combine(pp.Word(pp.alphas)) + pp.ZeroOrMore(pp.Suppress('+') + molecule_with_coeff + pp.Combine(pp.Word(pp.alphas))) 
-    reactantsExpr = all_molecules + pp.Suppress(rxnType) # automatically suppresses remainder of text
-    productsExpr = pp.Suppress(reactantsExpr) + all_molecules 
+    rxn_arrow               = Literal('->')
+    coefficient             = ZeroOrMore(Word(nums, '.' + nums))  # Match integers & floats
+    molecule                = Combine(Literal('#') + Word(nums) + Literal('#'))
+    molecule_w_coefficient  = Group(coefficient + molecule)
+    all_molecules           = ZeroOrMore(molecule_w_coefficient + Suppress('+') | molecule_w_coefficient)
+    reactants               = all_molecules + Suppress(rxn_arrow)
+    products                = Suppress(reactants) + all_molecules
 
-    # Initialize lhs and rhs system of equation arrays
-    DEsysLHS = np.array([]) # left of equal sign, the dA/dt, dB/dt, etc. (which will be written as dA, dB, etc) 
-    DEsysRHS = np.array([]) # right of equal sign, the rate expression based on chemical kinetic theory    
-    
+    # The different differential equation systems
+    # Key are the species and values are their net reaction rate
+    de_eqns: Dict[str, str] = {}
+
     # Iterate through rxn_book and get system of equations
-    for _, (rxn_id, rxn_info) in enumerate(rxn_book.items()): 
+    for _, (rxn_id, rxn_info) in enumerate(rxn_book.items()):
+        rate_constant = rxn_info[1]
 
-        # Parse the current reaction split by '->', i.e., separate reactants and products.
-        reactantString = reactantsExpr.parseString(rxn_info[0]) # reactants
-        productString = productsExpr.parseString(rxn_info[0]) # products
+        # Parse and convert to dict the current reaction split by '->', i.e., separate reactants and products.
+        # Convert to dictionary and make explicit any implicit coefficients
+        reactants_dict  = to_dict(reactants.parseString(rxn_info[0]))
+        products_dict   = to_dict(products.parseString(rxn_info[0]))
 
-        # If the first reactant has a stoich. coefficient of 1 (but implicit in reactions config file), make this explicit.
-        if reactantString[0].isalpha():
-            reactantString.insert(0, '1')
-        # If the first product has a stoich. coefficient of 1 (but implicit in reactions config file), make this explicit.
-        if productString[0].isalpha():
-            productString.insert(0, '1')
-        
-        # If any subsequent reactants have stoich. coefficient of 1 (but implicit in reactions config file), make this explicit.
-        reactant_bool = np.asarray([r.isalpha() for r in reactantString])
-        indices = np.where(reactant_bool == True)[0]
-        for ind in indices:
-            if reactantString[int(ind-1)].isalpha():
-                reactantString.insert(ind, '1')
-                # account for shift in original indice locations due to recent insert
-                indices += 1 
-        
-        # If any subsequent products have stoich. coefficient of 1 (but implicit in reactions config file), make this explicit.
-        product_bool = np.asarray([r.isalpha() for r in productString])
-        indices = np.where(product_bool == True)[0]
-        for ind in indices:
-            if productString[int(ind-1)].isalpha():
-                productString.insert(ind, '1')
-                # account for shift in original indice locations due to recent insert
-                indices += 1
-
-        # Create both the lhs and rhs of differential equation reaction system for the reactants:
-        counter = 0
-        while counter < len(reactantString[0::2]):
-            DEsysLHS = np.append(DEsysLHS, 'd' + reactantString[1::2][counter])
-            rate = rxn_info[1]
-            if rate[:2] == 'z=':  # 0th order reaction
-                DEsysRHS = np.append(DEsysRHS, '-' + reactantString[0::2][counter] + '*' + rate[2:])
-            else:
-                DEsysRHS = np.append(DEsysRHS, '-' + reactantString[0::2][counter] + f'*{rxn_info[1]}*' + '*'.join([i + '**' + j for i, j in zip(reactantString[1::2], reactantString[0::2]) ]))
-            counter += 1
-
-        # Create both the lhs and rhs of differential equation reaction system for the products:
-        counter = 0
-        while counter < len(productString[0::2]):
-            DEsysLHS = np.append(DEsysLHS, 'd' + productString[1::2][counter])
-            rate = rxn_info[1]
-            if rate[:2] == 'z=':  # 0th order reaction
-                DEsysRHS = np.append(DEsysRHS, reactantString[0::2][counter] + '*' + rate[2:])
-            else:
-                DEsysRHS = np.append(DEsysRHS, productString[0::2][counter] + f'*{rxn_info[1]}*' + '*'.join([i + '**' + j for i, j in zip(reactantString[1::2], reactantString[0::2]) ]))
-            counter += 1
-
-    # Combine duplicate entries (i.e. 2 statements for dA, should be added to get total differential equation).
-    # Duplicates occur because the parser digests reactions independently, thus duplicates arise because a species may be present in more than one reaction.
-    checked = []
-    tempLHS = np.array([])
-    tempRHS = np.array([])
-    for currMolec in DEsysLHS:
-        if currMolec not in checked:
-            dupIndices = [i for i, x in enumerate(DEsysLHS) if x == currMolec]
-            tempLHS = np.append(tempLHS, currMolec)
-            tempRHS = np.append(tempRHS, '+'.join(DEsysRHS[dupIndices]))
-            checked.append(currMolec)
-
-    # Until this point, the LHS was written as dA (i.e. for dA/dt). shorten this notation further such that dA --> A
-    DEsysLHS = [LHS[1:] for LHS in tempLHS]
-    DEsysRHS = tempRHS.tolist()
+        # Update the lhs and rhs of differential equation reaction system for the reactants:
+        update_lhs_rhs(reactants_dict,  reactants_dict, rate_constant, de_eqns, negative_sign=True)
+        update_lhs_rhs(products_dict,   reactants_dict, rate_constant, de_eqns, negative_sign=False)
 
     # Return to original specie names, now that reaction parsing is complete
-    for i, spec in enumerate(DEsysLHS):
-        # hold dummy and true specie names for a given specie
-        dummy_spec, true_spec = spec, specie_order[i]
+    for name_o, name_d in dummy_map.items():
+        # Replace in keys
+        de_eqns[name_o] = de_eqns.pop(name_d)
+        # Replace within reaction rates
+        for _name, eqn in de_eqns.items():
+            de_eqns[_name] = eqn.replace(name_d, name_o)
 
-        # for each differential equation, replace dummy specie with true specie name
-        for j, eqn in enumerate(DEsysRHS):
-            DEsysRHS[j] = eqn.replace(dummy_spec, true_spec)
-
-        # re-assign true specie name from dummy name for LHS
-        DEsysLHS[i] = true_spec
-
-    # Check #6 - check if the species listed in main config file EXACTLY matches that found in reactions config file 
-    # note that use of sorted() does not modify lists in place.
-    if sorted(specie_order) != sorted(DEsysLHS):
-        raise ValueError(f"The unique species found in the main config file does not match the unique species found after parsing the reactions. Ensure these two files contain the same species.")
-    
     # Enforce order of differential equations in same species appearance as given in main configuration file
-    # i.e. if a,b given in main config, then should return [da/dt, db/dt] etc.
-    reaction_eqns = DEsysRHS
-    if specie_order != DEsysLHS:
-        reaction_eqns = []
-        for _, specie in enumerate(specie_order):
-            where_specie = DEsysLHS.index(specie)
-            reaction_eqns.append(DEsysRHS[where_specie])
+    # This is done implicitly since python maintains dictionary keys in insertion order, and dummy_map's keys are in the correct order
+    reaction_eqns = []
+    for _s, _rxn in de_eqns.items():
+        reaction_eqns.append(_rxn)
   
     return reaction_eqns
 
