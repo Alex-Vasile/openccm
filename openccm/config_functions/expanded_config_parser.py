@@ -149,9 +149,9 @@ class ConfigParser(configparser.ConfigParser):
             specie_names = [name for name in self.get_list(['SIMULATION', 'specie_names'], str)]
             if 'specie_names' not in self['SIMULATION'] or len(specie_names) == 0:
                 raise ValueError('Need to specify at least 1 specie if running a simulation on the compartmental model.')
-            for special_var in ['x', 'y', 'z', 't']:
-                if special_var in specie_names:
-                    raise ValueError(f"{special_var} is a reserved symbol, cannot use it, or a capitalization of it, as a specie name.")
+            for i, specie_name in enumerate(specie_names):
+                if specie_name in ['x', 'y', 'z', 't', 'S']:
+                    raise ValueError(f"{specie_name} is a reserved symbol and cannot be used, as a specie name.")
 
             # Validate BCs
             bc_string = self.get_item(['SIMULATION', 'boundary_conditions'], str)
