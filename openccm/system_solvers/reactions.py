@@ -154,19 +154,7 @@ def organize_reactions_input(specie_order: List[str], all_reactions: List[str], 
         curr_key = rxn.split(':')[0]
         rxn_book.setdefault(curr_key, [])
         
-        # Append actual reaction to book
         rxn_book[curr_key].append(rxn.split(':')[1].strip())
-
-        # Check #5 - rate constant must be a number. Note that since we also allow 'AeB' format (A x 10^B) then we need a try/except since isnumeric() and isdigit() will not work.
-        try:
-            rate = rate_book.get(curr_key)
-            if rate[:2] == 'z=':  # 0th order reaction
-                float(rate[2:])
-            else:
-                float(rate)
-        except Exception as e:
-            raise ValueError(f"{e}. Please check that rate constants are numeric in reactions config.")
-        # If rate constant is numeric, then append to reaction book
         rxn_book[curr_key].append(rate_book.get(curr_key))
 
     # Create mapping of species to dummy specie names which is much easier for parsing process
