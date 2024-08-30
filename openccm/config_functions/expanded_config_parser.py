@@ -146,7 +146,7 @@ class ConfigParser(configparser.ConfigParser):
 
         if self['SIMULATION']['run'] == 'True':
             # Validate species
-            specie_names = [name.lower() for name in self.get_list(['SIMULATION', 'specie_names'], str)]
+            specie_names = [name for name in self.get_list(['SIMULATION', 'specie_names'], str)]
             if 'specie_names' not in self['SIMULATION'] or len(specie_names) == 0:
                 raise ValueError('Need to specify at least 1 specie if running a simulation on the compartmental model.')
             for special_var in ['x', 'y', 'z', 't']:
