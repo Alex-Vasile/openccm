@@ -35,7 +35,7 @@ import sympy as sp
 def generate_reaction_system(config_parser: ConfigParser, _ddt_reshape_shape: Optional[Tuple[int, int, int]]) -> None:
     """
     Main function that handles support for systems of chemical reactions. In order, this function:
-    1. Performs an initial parsing of the reactions configuration file based on the two main headers, [REACTIONS] and [RATES].
+    1. Performs an initial parsing of the reactions configuration file based on the two main headers, [REACTIONS] and [RATE CONSTANTS].
     2. Parses reactions (and associated rates) in the same species order as they appear specified in the main configuration file.
     3. Creates a runtime-generated function containing the differential reaction system of equations for each specie which contributes to overall mass balance.
 
@@ -60,10 +60,10 @@ def generate_reaction_system(config_parser: ConfigParser, _ddt_reshape_shape: Op
     # If reactions are specified, read each line in reactions configuration file
     with open(input_file, 'r') as file:
         all_lines = file.readlines()
-    
-    # Get [REACTIONS] and [RATES] header locations (since this can be unordered)
+
+    # Get [REACTIONS] and [RATE CONSTANTS] header locations (since this can be unordered)
     reactions_header = all_lines.index('[REACTIONS]\n')
-    rates_header     = all_lines.index('[RATES]\n')
+    rates_header     = all_lines.index('[RATE CONSTANTS]\n')
 
     # Do not assume that reactions come before rates (as provided in the examples)
     if reactions_header < rates_header:
@@ -194,7 +194,7 @@ def parse_reactions(dummy_map: Dict[str, str], rxn_book: Dict[str, List[str]]) -
         R1: N2O4 -> 2NO2
         R2: 2NO2 -> N2O4
 
-        [RATES]
+        [RATE CONSTANTS]
         R1: 1e-2
         R2: 3e-4
 
