@@ -82,7 +82,7 @@ def run(config_parser_or_file: Union[ConfigParser, str]) -> Dict[str, int]:
 
         if cache_info.need_opencmp_mesh:
             with ngcore.TaskManager():
-                mesh = Mesh(cache_info.name_refined_mesh)
+                mesh = Mesh(cache_info.name_refined_mesh_opencmp)
         if OpenCMP and output_VTK:
             with ngcore.TaskManager():
                 n_gfu = GridFunction(L2(mesh, order=0) ** mesh.dim)
@@ -180,7 +180,7 @@ def run(config_parser_or_file: Union[ConfigParser, str]) -> Dict[str, int]:
                 VTKOutput(ma=mesh,
                           coefs=[compartment_labels_pre_gfu, compartment_labels_post_gfu, element_labels_gfu],
                           names=['compartment # pre', 'compartment # post', 'element #'],
-                          filename=cache_info.name_model_info,
+                          filename=cache_info.name_model_info_opencmp,
                           subdivision=config_parser.get_item(['POST-PROCESSING', 'subdivisions'], int)
                           ).Do()
         else:
@@ -233,9 +233,10 @@ class CacheInfo:
     """
     def __init__(self, config_parser: ConfigParser):
         model               = config_parser.get_item(['COMPARTMENT MODELLING',  'model'],               str)
-        output_VTK          = config_parser.get_item(['POST-PROCESSING',        'output_VTK'],          bool)
         tmp_folder_path     = config_parser.get_item(['SETUP',                  'tmp_folder_path'],     str)
         output_folder_path  = config_parser.get_item(['SETUP',                  'output_folder_path'],  str)
+        vtu_folder_path     = config_parser.get_item(['POST-PROCESSING',        'vtu_dir'],             str)
+        output_VTK          = config_parser.get_item(['POST-PROCESSING',        'output_VTK'],          bool)
         OpenCMP             = config_parser.get('INPUT', 'opencmp_sol_file_path', fallback=None) is not None
 
         self.name_cmesh                 = tmp_folder_path + 'cmesh.pickle'
@@ -250,32 +251,34 @@ class CacheInfo:
         """Filename for saving the director in OpenCMP format."""
         self.name_direction_vector      = tmp_folder_path + 'dir_vec.npy'
         """Filename for saving the director in numpy format."""
-        self.name_model_info            = output_folder_path + model + '_info'
+        self.name_model_info_opencmp     = output_folder_path + model + '_info'
         """Filename for saving the model info for visualziation."""
         self.name_model_network         = tmp_folder_path + model + '_network.pickle'
         """Filename for saving the PFR/CSTR network."""
-        self.name_refined_mesh          = tmp_folder_path + 'sim_fine.vol'
+        self.name_refined_mesh_opencmp  = tmp_folder_path + 'sim_fine.vol'
         """Filename for saving the refined OpenCMP mesh."""
-        if OpenCMP:
-            name_velocity_info          = output_folder_path + 'velocity_info.vtu'
-        else:  # OpenFOAM
-            t0 = str(config_parser.get_list(['SIMULATION', 't_span'], float)[0])
         self.name_velocity_vector       = tmp_folder_path + 'vel_vec.npy'
         """Filename for saving the velocity vector in numpy format."""
         self.name_phase_fraction        = tmp_folder_path + 'phase_frac.npy'
         """Filename for saving the phase fraction data in numpy format."""
-        self.name_flows_and_upwind = tmp_folder_path + 'flows_and_upwind.npy'
+        self.name_flows_and_upwind      = tmp_folder_path + 'flows_and_upwind.npy'
         """Filename for saving the facet flows in numpy format."""
+
+        if OpenCMP:
+            name_velocity_info          = output_folder_path + 'velocity_info.vtu'
+        else:  # OpenFOAM
+            t0 = str(config_parser.get_list(['SIMULATION', 't_span'], float)[0])
+            openfoam_vtu_folder = f"{output_folder_path}/{vtu_folder_path}/{t0}/"
 
         self.already_made_cfd_processed_results =   isfile(self.name_direction_vector) \
                                                     and isfile(self.name_velocity_vector) \
                                                     and isfile(self.name_phase_fraction) \
                                                     and ((not OpenCMP or isfile(self.name_direction_sol))
-                                                        and isfile(self.name_refined_mesh)
+                                                        and (not OpenCMP or isfile(self.name_refined_mesh_opencmp))
                                                         and ((OpenCMP and isfile(name_velocity_info))
                                                             or (not OpenCMP
-                                                                and isfile(output_folder_path + t0 + '/velocity')
-                                                                and isfile(output_folder_path + t0 + '/director'))
+                                                                and isfile(openfoam_vtu_folder + "velocity")
+                                                                and isfile(openfoam_vtu_folder + "direction"))
                                                             )
                                                     )
 
@@ -286,15 +289,15 @@ class CacheInfo:
         self.already_made_compartment_network   = isfile(self.name_compartment_network) and isfile(self.name_compartments_post)
         """Bool indicating if the compartment network has already been created and can be loaded rather than needing to be created."""
         if OpenCMP:
-            self.already_made_cm_info_vtu       = isfile(self.name_model_info + '.vtu')
+            self.already_made_cm_info_vtu       = isfile(self.name_model_info_opencmp + '.vtu')
             """Bool indicating if the model visualization has already been created."""
         else:
-            self.already_made_cm_info_vtu       = (isfile(output_folder_path + t0 + '/compartments_post')
-                                                   and isfile(output_folder_path + t0 + '/compartments_pre')
-                                                   and isfile(output_folder_path + t0 + '/dof_labels')
-                                                   and isfile(output_folder_path + t0 + '/element_labels')
-                                                   and isfile(output_folder_path + t0 + '/direction_avg_pre')
-                                                   and isfile(output_folder_path + t0 + '/direction_avg_post'))
+            self.already_made_cm_info_vtu       = (    isfile(openfoam_vtu_folder + 'compartments_post')
+                                                   and isfile(openfoam_vtu_folder + 'compartments_pre')
+                                                   and isfile(openfoam_vtu_folder + 'dof_labels')
+                                                   and isfile(openfoam_vtu_folder + 'element_labels')
+                                                   and isfile(openfoam_vtu_folder + 'direction_avg_pre')
+                                                   and isfile(openfoam_vtu_folder + 'direction_avg_post'))
             """Bool indicating if the model visualization has already been created."""
 
         self.already_made_model_network         = isfile(self.name_model_network)
