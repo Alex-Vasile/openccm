@@ -103,14 +103,14 @@ def create_dof_to_element_map(model_to_element_map: List[List[Tuple[float, int]]
     to the element.
 
     Args:
-        model_to_element_map:   Mapping between model ID and a list of ordered tuples (distance_in_model, element ID)
-        points_per_model:       Number of discretization points per model. 1 for CSTRs, >1 for PFRs.
+    * model_to_element_map:   Mapping between model ID and a list of ordered tuples (distance_in_model, element ID)
+    * points_per_model:       Number of discretization points per model. 1 for CSTRs, >1 for PFRs.
 
     Returns:
-        dof_to_element_map:     Mapping between degree of freedom and the ordered lists of tuples representing the elements
-                                that this dof maps to. Tuple contains (element ID, dof_other, weight_this).
-                                dof_other and weight_this are used for a linear interpolation of value between the value of
-                                this dof and the nearest (dof_other).
+    * dof_to_element_map:     Mapping between degree of freedom and the ordered lists of tuples representing the elements
+                              that this dof maps to. Tuple contains (element ID, dof_other, weight_this).
+                              dof_other and weight_this are used for a linear interpolation of value between the value of
+                              this dof and the nearest (dof_other).
     """
     dof_dist = np.linspace(0.0, 1.0, num=points_per_model)
     # delta is not used for CSTR. Using a very small number for delta in order to push the weighing term to clip at 1.0
