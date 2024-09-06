@@ -267,7 +267,7 @@ def create_reaction_code(rxn_species:           List[str],
     close_bracket = the_source.find(')')
     source_left, source_right = the_source[:close_bracket], the_source[close_bracket:]
     if _ddt_reshape_shape:
-        source_right = source_right.replace('specie_concentrations', f'specie_concentrations.reshape({_ddt_reshape_shape})')
+        source_right = source_right.replace('specie_concentrations', f'specie_concentrations.reshape({_ddt_reshape_shape})[..., 1:]')
     the_source = source_left + ', _ddt' + source_right
 
     # Remove the unneeded return statement
@@ -277,22 +277,15 @@ def create_reaction_code(rxn_species:           List[str],
     # (n_species, n_pfr * points_per_pfr) -> (n_species, n_pfr, points_per_pfr)
     if _ddt_reshape_shape:  # Only for PFRs
         the_source +=  '    # Reshape concentrations and _ddt to apply reaction only to non-inlet nodes\n'
-        the_source += f'    _ddt = _ddt.reshape({_ddt_reshape_shape})\n'
+        the_source += f'    _ddt = _ddt.reshape({_ddt_reshape_shape})[..., 1:]\n'
         the_source += '    \n'
 
     # Unroll _ddt update for each specie
     rhs_strs = [str(eqn) for eqn in rhs_symb]
-    if _ddt_reshape_shape:
-        for specie in rxn_species:
-            for i, rhs in enumerate(rhs_strs):
-                rhs_strs[i] = rhs.replace(specie, specie + '[..., 1:]')
 
     for id_specie, rhs in enumerate(rhs_strs):
         the_source += f'    # Update for specie {rxn_species[id_specie]}\n'
-        if _ddt_reshape_shape:
-            the_source += f'    _ddt[{id_specie}, :, 1:] += {rhs} \n\n'  # RXN does not apply to inlet node.
-        else:
-            the_source += f'    _ddt[{id_specie}, :] += {rhs} \n\n'
+        the_source += f'    _ddt[{id_specie}, :] += {rhs} \n\n'
 
     # Write system of differential reaction equations to runtime-generated file
     with open(rxn_file_path, 'w') as file:
