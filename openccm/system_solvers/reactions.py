@@ -23,6 +23,9 @@ for the simulations.
 """
 
 import inspect
+from pathlib import Path
+
+import numpy as np
 from pyparsing import Combine, Group, Literal, ParseResults, Suppress, Word, ZeroOrMore, nums, alphas, OneOrMore
 from typing import List, Dict, Optional, Tuple
 
@@ -32,8 +35,10 @@ from configparser import ConfigParser as ConfigParserPlain
 import pyparsing as pp
 import sympy as sp
 
+from ..io import read_mesh_data
 
-def generate_reaction_system(config_parser: ConfigParser, _ddt_reshape_shape: Optional[Tuple[int, int, int]]) -> None:
+
+def generate_reaction_system(config_parser: ConfigParser, dof_to_element_map: List[List[Tuple[int, int, float]]], _ddt_reshape_shape: Optional[Tuple[int, int, int]]) -> None:
     """
     Main function that handles support for systems of chemical reactions. In order, this function:
     1. Performs an initial parsing of the reactions configuration file based on the two main headers, [REACTIONS] and [RATE CONSTANTS].
@@ -42,8 +47,12 @@ def generate_reaction_system(config_parser: ConfigParser, _ddt_reshape_shape: Op
 
     Parameters
     ----------
-    * config_parser:      OpenCCM ConfigParser which contains configuration file information and location (i.e. relative path).
-    * _ddt_reshape_shape: Shape needed by _ddt for PFR systems so that the inlet node does not have a reaction occurring at it. Used by `create_reaction_code`
+    * config_parser:        OpenCCM ConfigParser which contains configuration file information and location (i.e. relative path).
+    * dof_to_element_map:   Mapping between degree of freedom and the ordered lists of tuples representing the elements
+                            that this dof maps to. Tuple contains (element ID, dof_other, weight_this).
+                            dof_other and weight_this are used for a linear interpolation of value between the value of
+                            this dof and the nearest (dof_other).
+    * _ddt_reshape_shape:   Shape needed by _ddt for PFR systems so that the inlet node does not have a reaction occurring at it. Used by `create_reaction_code`
     """
     input_file    = config_parser.get_item(['SIMULATION', 'reactions_file_path'], str)
     rxn_species   = config_parser.get_list(['SIMULATION', 'specie_names'],        str)
@@ -52,21 +61,163 @@ def generate_reaction_system(config_parser: ConfigParser, _ddt_reshape_shape: Op
     # Create dummy file if no reactions specified
     if input_file == 'None':
         with open(rxn_file_path, 'w') as file:
-            file.write("from numba import njit\n\n\n")
+            file.write("from numba import njit\n")
+            file.write("from numpy import *\n\n\n")
             file.write("@njit\n")
             file.write("def reactions(C, _ddt):\n")
             file.write("    return\n\n")
     else:
         rxn_config_parser = ConfigParserPlain()
+        rxn_config_parser.optionxform = str  # Case-sensitive parsing of keys
         rxn_config_parser.read(input_file)
 
-        all_reactions:      Dict[str, str]  = dict(rxn_config_parser['REACTIONS']) if rxn_config_parser.has_section('REACTIONS') else {}
-        all_rate_constants: Dict[str, str]  = dict(rxn_config_parser['RATE CONSTANTS'])  if rxn_config_parser.has_section('RATE CONSTANTS') else {}
+        all_reactions:      Dict[str, str]  = dict(rxn_config_parser['REACTIONS'])      if rxn_config_parser.has_section('REACTIONS')       else {}
+        all_rate_constants: Dict[str, str]  = dict(rxn_config_parser['RATE CONSTANTS']) if rxn_config_parser.has_section('RATE CONSTANTS')  else {}
+        extra_terms_str:    Dict[str, str]  = dict(rxn_config_parser['EXTRA TERMS'])    if rxn_config_parser.has_section('EXTRA TERMS')     else {}
 
-        reaction_eqns   = parse_reactions(all_reactions, all_rate_constants) if all_reactions else {}
+        reaction_eqns           = parse_reactions(all_reactions, all_rate_constants) if all_reactions else {}
+        extra_terms_for_file    = generate_extra_terms_for_reactions(config_parser, dof_to_element_map, extra_terms_str, _ddt_reshape_shape)
 
         # Generate runtime function containing differential reaction system of equations for mass balance.
-        create_reaction_code(rxn_species, reaction_eqns, rxn_file_path, _ddt_reshape_shape)
+        create_reaction_code(rxn_species, reaction_eqns, rxn_file_path, extra_terms_for_file, _ddt_reshape_shape)
+
+
+def generate_extra_terms_for_reactions(config_parser:       ConfigParser,
+                                       dof_to_element_map:  List[List[Tuple[int, int, float]]],
+                                       extra_terms_str:     Dict[str, str],
+                                       _ddt_reshape_shape:  Optional[Tuple[int, int, int]]) -> str:
+    """
+    Helper function for converting the expressions for the extra terms into runnable code for the reaction file.
+
+    Three types of expressions are supported:
+
+    1.  A closed form expression, potentially involving math operations For example:
+
+            a: 3
+            b: sin(2*pi/0.12)
+
+    2.  A closed form expression involving **other extra terms**. For example:
+
+            radius: 10
+            area:   pi * radius**2
+
+    **Note: The order of terms is important. A term must be first defined before being used.**
+    The above example is valid, but the example below is **not** valid since `radius` is used before being defined.
+
+            area:   pi * radius**2
+            radius: 10
+
+    3.  Load a result in the native format of the CFD software used for creating the hydrodynamics.
+        The format is:
+
+            CFD, file_name
+
+        The CFD keyword specifies to read the specific file in the CFD's native format.
+        The file is assumed to in the same folder as the hydrodynamics result.
+        Those results are then mapped to a numpy array that is indexed by the global degree of freedom.
+
+    Parameters
+    ----------
+    * config_parser:        OpenCMP config parser to read values from.
+    * dof_to_element_map:   Mapping between degree of freedom and the ordered lists of tuples representing the elements
+                            that this dof maps to. Tuple contains (element ID, dof_other, weight_this).
+                            dof_other and weight_this are used for a linear interpolation of value between the value of
+                            this dof and the nearest (dof_other).
+    * extra_terms_str:      Mapping between the name of the extra terms and the string representation of their value.
+    * _ddt_reshape_shape:   Shape needed by _ddt for PFR systems so that the inlet node does not have a reaction occurring at it.
+
+    Returns
+    -------
+    * A string representation for the python code required for loading these extra terms by the reaction file.
+    """
+    if _ddt_reshape_shape:
+        _ddt_reshape_shape = _ddt_reshape_shape[1:]  # 1st index is number of species, letting broadcasting take care of that
+
+    i_to_interpolate: List[int]         = []
+    elements_for_dof: List[List[int]]   = []
+    for i, mapping in enumerate(dof_to_element_map):
+        if len(mapping) == 0:
+            i_to_interpolate.append(i)
+        elements_for_dof.append([element for element, _, _ in mapping])
+
+    def partition_i(i_to_interpolate: List[int], elements_for_dof: List[List[int]]) -> Tuple[List[int], List[int], List[int]]:
+        i_left, i_middle, i_right = [], [], []
+        j = 0
+        while j < len(i_to_interpolate):
+            i = i_to_interpolate[j]
+            if i == 0:
+                if len(elements_for_dof[1]) > 0:
+                    i_right.append(i_to_interpolate.pop(j))
+                    continue
+            elif i == len(elements_for_dof) - 1:
+                if len(elements_for_dof[-2]) > 0:
+                    i_left.append(i_to_interpolate.pop(j))
+                    continue
+            else:
+                left = len(elements_for_dof[i-1]) > 0
+                right = len(elements_for_dof[i+1]) > 0
+                if left and right:
+                    i_middle.append(i_to_interpolate.pop(j))
+                    continue
+                elif left:
+                    i_left.append(i_to_interpolate.pop(j))
+                    continue
+                elif right:
+                    i_right.append(i_to_interpolate.pop(j))
+                    continue
+            j += 1
+
+        return i_left, i_middle, i_right
+
+    while i_to_interpolate:
+        # i_to_interpolate is shrunk by partition_i on each iteration, eventually it will be empty.
+        left, middle, right = partition_i(i_to_interpolate, elements_for_dof)
+        for i in middle:  # 1. Interpolate all entries which have two full neighbours
+            elements_for_dof[i] = elements_for_dof[i - 1] + elements_for_dof[i + 1]
+        for i in left:  # 2. Interpolate all entries which have a neighbour to their left
+            elements_for_dof[i] = elements_for_dof[i - 1]
+        for i in right:  # 3. Interpolate all entries which have a neighbour to their right
+            elements_for_dof[i] = elements_for_dof[i + 1]
+
+    OpenCMP = config_parser.get('INPUT', 'opencmp_sol_file_path', fallback=None) is not None
+
+    if not OpenCMP:
+        openfoam_sol_folder_path    = config_parser.get_item(['INPUT', 'openfoam_sol_folder_path'], str)
+        sim_folder_to_use           = config_parser.get('INPUT', 'openfoam_sim_folder_to_use')
+        openfoam_sim_folder_path    = openfoam_sol_folder_path + sim_folder_to_use
+
+    tmp_folder_path = config_parser.get_item(['SETUP', 'tmp_folder_path'], str)
+
+    points_per_pfr  = config_parser.get_item(['SIMULATION', 'points_per_pfr'], int)
+    model           = config_parser.get_item(['COMPARTMENT MODELLING', 'model'], str)
+
+    if 'CFD' in extra_terms_str:
+        raise KeyError("'CFD' is reserved and cannot be used as the name for an extra variable, "
+                       "please use a different name, or change the capitalization.")
+
+    tmp_buffer = np.zeros(len(dof_to_element_map))
+    extra_terms_for_file = []
+    np.seterr(all='raise')
+    for name, expression in extra_terms_str.items():
+        if expression[:3] == 'CFD':
+            if OpenCMP:
+                raise NotImplementedError('Loading of arbitrary OpenCMP results not supported.')
+            numpy_name = f"{name}_{model}_{points_per_pfr}.npy"
+
+            file_name = expression.split(',')[1].replace(' ', '')
+            if not Path(f"{tmp_folder_path}{numpy_name}").exists():
+                data = read_mesh_data(openfoam_sim_folder_path + '/' + file_name, float)
+                for i, mapping in enumerate(elements_for_dof):
+                    tmp_buffer[i] = np.mean(data[mapping])
+                if _ddt_reshape_shape:
+                    buffer_view_to_save = tmp_buffer.reshape(_ddt_reshape_shape)[..., 1:]  # [..., 1:] to remove first DOF since those are handled seperately
+                else:
+                    buffer_view_to_save = tmp_buffer
+                np.save(f"{tmp_folder_path}{numpy_name}", buffer_view_to_save)
+            extra_terms_for_file.append(f"{name} = np.load('{tmp_folder_path}{numpy_name}')")
+        else:
+            extra_terms_for_file.append(f"{name} = {expression}")
+    return '\n'.join(extra_terms_for_file)
 
 
 def _organize_reactions_input(all_reactions:      Dict[str, str],
@@ -230,6 +381,7 @@ def parse_reactions(all_reactions:      Dict[str, str],
 def create_reaction_code(rxn_species:           List[str],
                          reaction_eqns:         Dict[str, str],
                          rxn_file_path:         str,
+                         extra_terms:           str,
                          _ddt_reshape_shape:    Optional[Tuple[int, int, int]] = None
                          ) -> None:
     """
@@ -241,6 +393,7 @@ def create_reaction_code(rxn_species:           List[str],
     * rxn_species:          Name of species in the order that they appear in the main config file.
     * reaction_eqns:        Mapping between specie name and the net reaction for that specie.
     * rxn_file_path:        The path to the file in which to save the generated reactions.
+    * extra_terms:          The extra terms, if any, in string format ready to write to the reactions file.
     * _ddt_reshape_shape:   Shape needed by _ddt for PFR systems so that the inlet node does not have a reaction occurring at it.
     """
     # If an empty dict was passed for reaction_eqns, it means no reactions are involved in simulation (i.e. tracer experiment).
@@ -291,6 +444,9 @@ def create_reaction_code(rxn_species:           List[str],
     with open(rxn_file_path, 'w') as file:
         file.write("from numba import njit\n")
         file.write("import numpy as np\n")
+        file.write("\n")
+        file.write(extra_terms)
+        file.write("\n")
         file.write("\n")
         file.write("\n")
         file.write('@njit\n')

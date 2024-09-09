@@ -127,7 +127,7 @@ def load_and_prepare_bc_ic_and_rxn(config_parser:               ConfigParser,
 
     load_initial_conditions(config_parser, c0, cmesh, dof_to_element_map, points_per_model, connected_to_another_inlet, Q_weight)
     create_boundary_conditions(c0, config_parser, Q_weight_inlets, points_for_bc, t0, points_per_model, cmesh, dof_to_element_map, model_volumes)
-    generate_reaction_system(config_parser, _ddt_reshape_shape)
+    generate_reaction_system(config_parser, dof_to_element_map, _ddt_reshape_shape)
 
     c0 = c0.ravel()  # Required since solve_ivp needs 1D array
 
