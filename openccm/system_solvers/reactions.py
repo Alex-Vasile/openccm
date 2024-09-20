@@ -38,7 +38,10 @@ import sympy as sp
 from ..io import read_mesh_data
 
 
-def generate_reaction_system(config_parser: ConfigParser, dof_to_element_map: List[List[Tuple[int, int, float]]], _ddt_reshape_shape: Optional[Tuple[int, int, int]]) -> None:
+def generate_reaction_system(config_parser: ConfigParser,
+                             dof_to_element_map: List[List[Tuple[int, int, float]]],
+                             _ddt_reshape_shape: Optional[Tuple[int, int, int]]
+                             ) -> str:
     """
     Main function that handles support for systems of chemical reactions. In order, this function:
     1. Performs an initial parsing of the reactions configuration file based on the two main headers, [REACTIONS] and [RATE CONSTANTS].
@@ -53,18 +56,24 @@ def generate_reaction_system(config_parser: ConfigParser, dof_to_element_map: Li
                             dof_other and weight_this are used for a linear interpolation of value between the value of
                             this dof and the nearest (dof_other).
     * _ddt_reshape_shape:   Shape needed by _ddt for PFR systems so that the inlet node does not have a reaction occurring at it. Used by `create_reaction_code`
-    """
-    input_file    = config_parser.get_item(['SIMULATION', 'reactions_file_path'], str)
-    rxn_species   = config_parser.get_list(['SIMULATION', 'specie_names'],        str)
-    rxn_file_path = config_parser.get_item(['SETUP', 'tmp_folder_path'],        str) + '/reaction_code_gen.py'
 
-    # Create dummy file if no reactions specified
+    Returns
+    -------
+    * rxn_file_name:        The file name, without the .py, in which the reactions are saved.
+    """
+    input_file      = config_parser.get_item(['SIMULATION', 'reactions_file_path'], str)
+    rxn_species     = config_parser.get_list(['SIMULATION', 'specie_names'],        str)
+    tmp_folder_path = config_parser.get_item(['SETUP', 'tmp_folder_path'],          str)
+
     if input_file == 'None':
+        # Create dummy file if no reactions specified
+        rxn_file_name = 'reaction_code_gen_blank'
+        rxn_file_path = tmp_folder_path + '/' + rxn_file_name + '.py'
         with open(rxn_file_path, 'w') as file:
             file.write("from numba import njit\n")
             file.write("from numpy import *\n\n\n")
             file.write("@njit\n")
-            file.write("def reactions(C, _ddt):\n")
+            file.write("def _reactions(C, _ddt):\n")
             file.write("    return\n\n")
     else:
         rxn_config_parser = ConfigParserPlain()
@@ -75,11 +84,16 @@ def generate_reaction_system(config_parser: ConfigParser, dof_to_element_map: Li
         all_rate_constants: Dict[str, str]  = dict(rxn_config_parser['RATE CONSTANTS']) if rxn_config_parser.has_section('RATE CONSTANTS')  else {}
         extra_terms_str:    Dict[str, str]  = dict(rxn_config_parser['EXTRA TERMS'])    if rxn_config_parser.has_section('EXTRA TERMS')     else {}
 
+        rxn_file_name = f'reaction_code_gen_{hash(config_parser)}_{[hash(tuple(all_reactions.items())), hash(tuple(all_rate_constants.items())), hash(tuple(extra_terms_str.items()))]}'
+        rxn_file_path = tmp_folder_path + '/' + rxn_file_name + '.py'
+
         reaction_eqns           = parse_reactions(all_reactions, all_rate_constants) if all_reactions else {}
         extra_terms_for_file    = generate_extra_terms_for_reactions(config_parser, dof_to_element_map, extra_terms_str, _ddt_reshape_shape)
 
         # Generate runtime function containing differential reaction system of equations for mass balance.
         create_reaction_code(rxn_species, reaction_eqns, rxn_file_path, extra_terms_for_file, _ddt_reshape_shape)
+
+    return rxn_file_name
 
 
 def generate_extra_terms_for_reactions(config_parser:       ConfigParser,
@@ -410,7 +424,7 @@ def create_reaction_code(rxn_species:           List[str],
     the_source = inspect.getsource(sp.lambdify([rxn_species], rhs_symb, 'numpy'))
 
     # Change function name to reactions
-    the_source = the_source.replace("_lambdifygenerated","reactions")
+    the_source = the_source.replace("_lambdifygenerated","_reactions")
 
     # Change Dummy variable name
     dummy_name = the_source[the_source.find('(')+1:the_source.find(')')]

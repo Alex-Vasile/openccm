@@ -23,6 +23,7 @@ All functions related to running a simulation on the PFR/CSTR network.
 
 import os
 import sys
+import importlib
 from typing import Tuple, Dict, List, Optional, Callable
 
 import numpy as np
@@ -126,8 +127,8 @@ def load_and_prepare_bc_ic_and_rxn(config_parser:               ConfigParser,
     c0 = np.zeros(c_shape)
 
     load_initial_conditions(config_parser, c0, cmesh, dof_to_element_map, points_per_model, connected_to_another_inlet, Q_weight)
-    create_boundary_conditions(c0, config_parser, Q_weight_inlets, points_for_bc, t0, points_per_model, cmesh, dof_to_element_map, model_volumes)
-    generate_reaction_system(config_parser, dof_to_element_map, _ddt_reshape_shape)
+    bc_file_name  = create_boundary_conditions(c0, config_parser, Q_weight_inlets, points_for_bc, t0, points_per_model, cmesh, dof_to_element_map, model_volumes)
+    rxn_file_name = generate_reaction_system(config_parser, dof_to_element_map, _ddt_reshape_shape)
 
     c0 = c0.ravel()  # Required since solve_ivp needs 1D array
 
@@ -136,20 +137,19 @@ def load_and_prepare_bc_ic_and_rxn(config_parser:               ConfigParser,
     sys.path.append(tmp_directory_abs_path)
 
     # If the reaction module has previous been imported, need to remove it for the import statement to do anything.
-    if 'reaction_code_gen' in sys.modules:
-        sys.modules.pop('reaction_code_gen')
-    # noinspection PyUnresolvedReferences
-    import reaction_code_gen
+    if rxn_file_name in sys.modules:
+        sys.modules.pop(rxn_file_name)
+    rxn_module = importlib.import_module(rxn_file_name)
 
     # If the bc module has previous been imported, need to remove it for the import statement to do anything.
-    if 'bc_code_gen' in sys.modules:
-        sys.modules.pop('bc_code_gen')
-    # noinspection PyUnresolvedReferences
-    import bc_code_gen
+    if bc_file_name in sys.modules:
+        sys.modules.pop(bc_file_name)
+    bc_module = importlib.import_module(bc_file_name)
 
     # Remove the working directory to not pollute sys.path
     # so that consecutive runs from the same Python process find the correct files to import.
     # Don't pop last just in case another import happened inbetween
     sys.path.pop(sys.path.index(tmp_directory_abs_path))
 
-    return reaction_code_gen.reactions, bc_code_gen.boundary_conditions, c0
+    # noinspection PyUnresolvedReferences
+    return rxn_module._reactions, bc_module._boundary_conditions, c0

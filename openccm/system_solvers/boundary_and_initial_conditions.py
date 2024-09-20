@@ -51,7 +51,7 @@ def create_boundary_conditions(c0:                  np.ndarray,
                                points_per_model:    int,
                                cmesh:               CMesh,
                                dof_to_element_map:  List[List[Tuple[int, int, float]]],
-                               model_volumes:       np.ndarray) -> None:
+                               model_volumes:       np.ndarray) -> str:
     """
     CSTRs need the boundary condition in their original form since the equation for the inlets is sum (Q_in * C_in).
     PFRs however need the boundary condition in derivative form since the inlets to the PFRs produce a system of
@@ -85,6 +85,10 @@ def create_boundary_conditions(c0:                  np.ndarray,
                             dof_other and weight_this are used for a linear interpolation of value between the value of
                             this dof and the nearest (dof_other).
     * model_volumes:        The volume of each PFR/CSTR, indexed by their ID.
+
+    Returns
+    -------
+    * bc_file_name:         The file name, without the .py, in which the boundary conditions are saved.
     """
     def get_bc_id(_bc_name: str) -> int:
         if 'point' in _bc_name:
@@ -220,7 +224,7 @@ def create_boundary_conditions(c0:                  np.ndarray,
 
     # Hand unroll the loop to apply the BCs
     bc_file_lines.append("@njit(inline='always')  # Do not cache, _ddt will be a large matrix\n")
-    bc_file_lines.append("def boundary_conditions(t: float, _ddt: ndarray) -> None:\n")
+    bc_file_lines.append("def _boundary_conditions(t: float, _ddt: ndarray) -> None:\n")
     if len(bcs_names_used) == 0:
         bc_file_lines.append('    pass  # No boundary conditions used')
     else:
@@ -230,9 +234,12 @@ def create_boundary_conditions(c0:                  np.ndarray,
             bc_file_lines.append("\n")
 
     # Write to file
-    bc_file_path = config_parser.get_item(['SETUP', 'tmp_folder_path'], str) + '/bc_code_gen.py'
+    bc_file_name = f'bc_code_gen_{hash(config_parser)}'
+    bc_file_path = config_parser.get_item(['SETUP', 'tmp_folder_path'], str) + '/' + bc_file_name + '.py'
     with open(bc_file_path, "w") as file:
         file.write("".join(bc_file_lines))
+
+    return bc_file_name
 
 
 def dof_is_pfr_inlet(dof: int, points_per_model: int) -> bool:
