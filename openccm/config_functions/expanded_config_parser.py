@@ -309,3 +309,18 @@ class ConfigParser(configparser.ConfigParser):
         """
         section, key = config_keys
         return ast.literal_eval(self[section][key])
+
+    def __hash__(self):
+        """
+        Hash function used for generating unique reaction and boundary condition files for each simulation run.
+        NOT for putting the config parser into a dicitonary or similar.
+
+        Returns
+        -------
+        * _hash: Hash value of the dict
+        """
+        hashes = []
+        for section in self.sections():
+            for key, value in self[section].items():
+                hashes.append(hash(value))
+        return hash(tuple(hashes))
