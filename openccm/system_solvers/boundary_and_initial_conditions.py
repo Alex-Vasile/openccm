@@ -230,7 +230,7 @@ def create_boundary_conditions(c0:                  np.ndarray,
             bc_file_lines.append("\n")
 
     # Write to file
-    bc_file_path = config_parser.get_item(['SETUP', 'working_directory'],      str) + '/bc_code_gen.py'
+    bc_file_path = config_parser.get_item(['SETUP', 'tmp_folder_path'], str) + '/bc_code_gen.py'
     with open(bc_file_path, "w") as file:
         file.write("".join(bc_file_lines))
 

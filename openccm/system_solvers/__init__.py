@@ -132,8 +132,8 @@ def load_and_prepare_bc_ic_and_rxn(config_parser:               ConfigParser,
     c0 = c0.ravel()  # Required since solve_ivp needs 1D array
 
     # Add working directory to path so that imports can be found
-    working_directory_abs_path = os.getcwd() + '/' + config_parser.get_item(['SETUP', 'working_directory'], str)
-    sys.path.append(working_directory_abs_path)
+    tmp_directory_abs_path = os.getcwd() + '/' + config_parser.get_item(['SETUP', 'tmp_folder_path'], str)
+    sys.path.append(tmp_directory_abs_path)
 
     # If the reaction module has previous been imported, need to remove it for the import statement to do anything.
     if 'reaction_code_gen' in sys.modules:
@@ -150,6 +150,6 @@ def load_and_prepare_bc_ic_and_rxn(config_parser:               ConfigParser,
     # Remove the working directory to not pollute sys.path
     # so that consecutive runs from the same Python process find the correct files to import.
     # Don't pop last just in case another import happened inbetween
-    sys.path.pop(sys.path.index(working_directory_abs_path))
+    sys.path.pop(sys.path.index(tmp_directory_abs_path))
 
     return reaction_code_gen.reactions, bc_code_gen.boundary_conditions, c0

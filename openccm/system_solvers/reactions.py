@@ -56,7 +56,7 @@ def generate_reaction_system(config_parser: ConfigParser, dof_to_element_map: Li
     """
     input_file    = config_parser.get_item(['SIMULATION', 'reactions_file_path'], str)
     rxn_species   = config_parser.get_list(['SIMULATION', 'specie_names'],        str)
-    rxn_file_path = config_parser.get_item(['SETUP', 'working_directory'],        str) + '/reaction_code_gen.py'
+    rxn_file_path = config_parser.get_item(['SETUP', 'tmp_folder_path'],        str) + '/reaction_code_gen.py'
 
     # Create dummy file if no reactions specified
     if input_file == 'None':
