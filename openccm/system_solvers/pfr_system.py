@@ -110,6 +110,16 @@ def solve_system(
         for id_connection in connections[id_pfr][0].keys():
             Q_pfrs[id_pfr] += Q_connections[id_connection]
 
+    # Pre-divide Q_connections by Q_pfr for the PFR they're going into
+    Q_weight = Q_connections.copy()
+    for id_pfr, (inlet_info, _) in connections.items():
+        for id_connection in inlet_info:
+            Q_weight[id_connection] /= Q_pfrs[id_pfr]
+    # Validate that Q_weights sum to 1 for each PFR
+    for id_pfr in connections:
+        total = sum(Q_weight[id_connection] for id_connection in connections[id_pfr][0])
+        assert np.isclose(total, 1)
+
     # Info for connections between PFRs
         # 1. PFR inlet node     (To know what value to assign it to)
         # 2. Connection ID      (For Q_weight)
@@ -127,7 +137,7 @@ def solve_system(
                      points_per_pfr * (id_pfr_other_side + 1) - 1]  # Index of outlet node for other PFR
                 )
             elif id_pfr_other_side < 0:  # Domain inlet BC
-                Q_weight_inlets[id_pfr_other_side].append(Q_connections[id_connection] / Q_pfrs[id_pfr])
+                Q_weight_inlets[id_pfr_other_side].append(Q_weight[id_connection])
                 points_for_bc[id_pfr_other_side].append(points_per_pfr * id_pfr)
 
     # Convert to numpy array for numba reasons
@@ -146,18 +156,6 @@ def solve_system(
         p_s = points_per_pfr * id_pfr + 1    # +1 since the first point in the PFR gets handled below
         p_e = points_per_pfr * (id_pfr + 1)  # No -1 since we want the range inclusive of both ends
         _ddt0[:, p_s:p_e] = -Q_pfrs[id_pfr] / delta_vs[id_pfr]
-
-    # Pre-divide Q_connections by Q_pfr for the PFR they're going into
-    Q_weight = Q_connections.copy()
-    for id_pfr in connections:
-        inlet_info = connections[id_pfr][0]
-        for id_connection in inlet_info:
-            Q_weight[id_connection] /= Q_pfrs[id_pfr]
-
-    # Validate that Q_weights sum to 1 for each PFR
-    for id_pfr in connections:
-        total = sum(Q_weight[id_connection] for id_connection in connections[id_pfr][0])
-        assert np.isclose(total, 1)
 
     all_inlet_ids = points_per_pfr * np.arange(0, num_pfrs, dtype=int)
 
