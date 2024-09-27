@@ -26,7 +26,7 @@ import shutil
 from collections import defaultdict
 from multiprocessing.pool import Pool
 from pathlib import Path
-from typing import Callable, Dict, List, Set, Tuple, Any
+from typing import Callable, Dict, List, Set, Tuple, Any, Optional
 
 import numpy as np
 
@@ -279,25 +279,39 @@ def label_compartments_openfoam(output_file_name: str, compartments: Dict[int, S
 def export_to_vtu_openfoam(
         concentrations_all_time:    np.ndarray,
         ts:                         np.ndarray,
-        model_to_element_map:       List[List[Tuple[float, int]]],
+        model_to_element_map:       Optional[List[List[Tuple[float, int]]]],
         config_parser:              ConfigParser,
-        cmesh:                      CMesh
+        cmesh:                      CMesh,
+        dof_to_element_map:         Optional[List[List[Tuple[int, int, float]]]] = None,
 ) -> None:
+    """
+
+    Parameters
+    ----------
+    concentrations_all_time:    Array containing the
+    ts:
+    model_to_element_map
+    config_parser
+    cmesh
+    dof_to_element_map:
+    """
     print("Exporting simulation visualization")
 
     output_folder_path  = config_parser.get_item(['SETUP',              'output_folder_path'],  str)
     vtu_folder_path     = config_parser.get_item(['POST-PROCESSING',    'vtu_dir'],             str)
     points_per_model    = config_parser.get_item(['SIMULATION',         'points_per_pfr'],      int)
     species_names       = config_parser.get_list(['SIMULATION',         'specie_names'],        str)
+    t_span              = config_parser.get_list(['SIMULATION',         't_span'],              float)
 
     num_elements = len(cmesh.element_sizes)
 
-    dof_to_element_map = create_dof_to_element_map(model_to_element_map, points_per_model)
+    if not dof_to_element_map:
+        dof_to_element_map = create_dof_to_element_map(model_to_element_map, points_per_model)
 
     assert len(dof_to_element_map) == concentrations_all_time.shape[1]
 
     # t0 will contain several visualization files that are constant in time, will symlink to them for speed and small file size
-    t0_path = os.path.join(output_folder_path + vtu_folder_path + str(ts[0]))
+    t0_path = os.path.join(output_folder_path + vtu_folder_path + str(t_span[0]))
     contents_of_t0 = [(file_name, os.path.abspath(os.path.join(t0_path, file_name))) for file_name in os.listdir(t0_path)]
 
     # Initialize to -1 so that any non-compartmentalized elements can be filtered out (assuming only positive values are valid)
@@ -308,7 +322,7 @@ def export_to_vtu_openfoam(
         # First timestep will have been previously created to store compartmentalization info.
         Path(output_folder).mkdir(parents=True, exist_ok=(i_t == 0))
 
-        if i_t > 0:
+        if t != t_span[0]:
             for file_name, original_path in contents_of_t0:
                 os.symlink(original_path, os.path.join(output_folder, file_name))
 
