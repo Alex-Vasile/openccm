@@ -51,7 +51,8 @@ def create_boundary_conditions(c0:                  np.ndarray,
                                points_per_model:    int,
                                cmesh:               CMesh,
                                dof_to_element_map:  List[List[Tuple[int, int, float]]],
-                               model_volumes:       np.ndarray) -> str:
+                               model_volumes:       np.ndarray
+                               ) -> Tuple[str, Dict[int, Dict[int, sp.Expr]]]:
     """
     CSTRs need the boundary condition in their original form since the equation for the inlets is sum (Q_in * C_in).
     PFRs however need the boundary condition in derivative form since the inlets to the PFRs produce a system of
@@ -89,6 +90,7 @@ def create_boundary_conditions(c0:                  np.ndarray,
     Returns
     -------
     * bc_file_name:         The file name, without the .py, in which the boundary conditions are saved.
+    * bc_dict_for_eval:     Mapping BC id and a second mapping which maps from specie name to
     """
     def get_bc_id(_bc_name: str) -> int:
         if 'point' in _bc_name:
@@ -118,10 +120,10 @@ def create_boundary_conditions(c0:                  np.ndarray,
         "\n",
     ]
 
-    spatial_coords  = {x, y, z}
-    bc_dict         = defaultdict(dict)  # For writing to file
-    bc_dict_for_c0  = defaultdict(dict)  # For calculating new c0 values if using a PFR
-    bcs_names_used  = set()
+    spatial_coords      = {x, y, z}
+    bc_dict             = defaultdict(dict)  # For writing to file
+    bc_dict_for_eval    = defaultdict(dict)  # For calculating new c0 values if using a PFR
+    bcs_names_used      = set()
 
     bc_str = config_parser.get_item(['SIMULATION', 'boundary_conditions'], str)
 
@@ -148,6 +150,7 @@ def create_boundary_conditions(c0:                  np.ndarray,
 
     for bc_line in bc_str.splitlines():
         specie, bc_info = [item.strip() for item in bc_line.split(':')]
+        specie_id = specie_names.index(specie)
         if specie not in specie_names:
             raise ValueError(f'Unknown specie: {specie} when specifying boundary condition: {bc_line}.')
 
@@ -190,16 +193,16 @@ def create_boundary_conditions(c0:                  np.ndarray,
         else:
             bc_diff = bc_eqn.diff(t)
             bc_dict[bc_id][specie] = parse_piecewise_heaviside_into_string(str(bc_diff))
-            bc_dict_for_c0[bc_id][specie] = bc_eqn
+            bc_dict_for_eval[bc_id][specie_id] = bc_eqn
 
             # Zero out c0 for species that have any values specified for a given BC.
-            c0[specie_names.index(specie), points_for_bc[bc_id]] = 0
+            c0[specie_id, points_for_bc[bc_id]] = 0
 
     # Override c0 for PFR
-    for bc_id, species_dict in bc_dict_for_c0.items():
-        for specie, bc_eqn in species_dict.items():
+    for bc_id, species_dict in bc_dict_for_eval.items():
+        for specie_id, bc_eqn in species_dict.items():
             # np.add.at is used since it handles repeat indices which regular indexing does not
-            np.add.at(c0[specie_names.index(specie)],
+            np.add.at(c0[specie_id],
                       points_for_bc[bc_id],
                       np.array(Q_weights[bc_id]) * float(bc_eqn.evalf(subs={'t': t0})))
 
@@ -241,7 +244,7 @@ def create_boundary_conditions(c0:                  np.ndarray,
     with open(bc_file_path, "w") as file:
         file.write("".join(bc_file_lines))
 
-    return bc_file_name
+    return bc_file_name, bc_dict_for_eval
 
 
 def dof_is_pfr_inlet(dof: int, points_per_model: int) -> bool:

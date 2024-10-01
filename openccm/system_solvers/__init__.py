@@ -27,6 +27,7 @@ import importlib
 from typing import Tuple, Dict, List, Optional, Callable
 
 import numpy as np
+import sympy as sp
 
 from .cstr_system import solve_system as solve_cstr
 from .pfr_system import solve_system as solve_pfr
@@ -92,7 +93,7 @@ def load_and_prepare_bc_ic_and_rxn(config_parser:               ConfigParser,
                                    model_to_element_map:        List[List[Tuple[float, int]]],
                                    connected_to_another_inlet:  Optional[np.ndarray] = None,
                                    Q_weight:                    Optional[np.ndarray] = None
-                                   ) -> Tuple[Callable, Callable, np.ndarray]:
+                                   ) -> Tuple[Callable, Callable, np.ndarray, Dict[int, Dict[int, sp.Expr]]]:
     """
     Wrapper function for creating the initial condition array and applying the initial and boundary conditions to it.
 
@@ -127,7 +128,7 @@ def load_and_prepare_bc_ic_and_rxn(config_parser:               ConfigParser,
     c0 = np.zeros(c_shape)
 
     load_initial_conditions(config_parser, c0, cmesh, dof_to_element_map, points_per_model, connected_to_another_inlet, Q_weight)
-    bc_file_name  = create_boundary_conditions(c0, config_parser, Q_weight_inlets, points_for_bc, t0, points_per_model, cmesh, dof_to_element_map, model_volumes)
+    bc_file_name, bc_dict_for_eval = create_boundary_conditions(c0, config_parser, Q_weight_inlets, points_for_bc, t0, points_per_model, cmesh, dof_to_element_map, model_volumes)
     rxn_file_name = generate_reaction_system(config_parser, dof_to_element_map, _ddt_reshape_shape)
 
     c0 = c0.ravel()  # Required since solve_ivp needs 1D array
@@ -152,4 +153,4 @@ def load_and_prepare_bc_ic_and_rxn(config_parser:               ConfigParser,
     sys.path.pop(sys.path.index(tmp_directory_abs_path))
 
     # noinspection PyUnresolvedReferences
-    return rxn_module._reactions, bc_module._boundary_conditions, c0
+    return rxn_module._reactions, bc_module._boundary_conditions, c0, bc_dict_for_eval

@@ -174,18 +174,18 @@ def solve_system(
                 outlet_map[id_pfr_other_side].append((pfr, id_connection))
 
     from . import load_and_prepare_bc_ic_and_rxn
-    reactions, bcs, c0 = load_and_prepare_bc_ic_and_rxn(config_parser,
-                                                        c_shape,
-                                                        points_per_model=points_per_pfr,
-                                                        _ddt_reshape_shape=(num_species, num_pfrs, points_per_pfr),
-                                                        cmesh=cmesh,
-                                                        Q_weight_inlets=Q_weight_inlets,
-                                                        model_volumes=volumes,
-                                                        points_for_bc=points_for_bc,
-                                                        t0=t_span[0],
-                                                        model_to_element_map=pfr_to_element_map,
-                                                        connected_to_another_inlet=connected_to_another_inlet,
-                                                        Q_weight=Q_weight)
+    reactions, bcs, c0, _ = load_and_prepare_bc_ic_and_rxn(config_parser,
+                                                           c_shape,
+                                                           points_per_model=points_per_pfr,
+                                                           _ddt_reshape_shape=(num_species, num_pfrs, points_per_pfr),
+                                                           cmesh=cmesh,
+                                                           Q_weight_inlets=Q_weight_inlets,
+                                                           model_volumes=volumes,
+                                                           points_for_bc=points_for_bc,
+                                                           t0=t_span[0],
+                                                           model_to_element_map=pfr_to_element_map,
+                                                           connected_to_another_inlet=connected_to_another_inlet,
+                                                           Q_weight=Q_weight)
 
     args = (Q_weight, _ddt0, connected_to_another_inlet, all_inlet_ids, c_shape, reactions, bcs)
     output = solve_ivp(ddt, t_span, c0, method=solver, atol=atol, rtol=rtol, args=args, first_step=first_timestep, t_eval=t_eval)
