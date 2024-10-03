@@ -883,9 +883,7 @@ def _fix_domain_boundary_connection_ordering(inlets_and_outlets:        List[Tup
         i_in = 0  # Insertion point were we move the next value
         i_out = len(inlets_and_outlets) - 1
         for id_other, count in counter.items():
-            if id_other >= 0:  # Domain boundary
-                continue
-            if count == 1:  # More than one connection to it
+            if id_other >= 0:  # Not a domain boundary
                 continue
 
             print(f"Compartment {id_compartment} has multiple connections to domain inlet/outlet: {id_other}. Reordering as necessary.")
@@ -945,7 +943,7 @@ def _fix_domain_boundary_connection_ordering(inlets_and_outlets:        List[Tup
 
         # Nothing outside of those contiguous blocks should be a domain inlet/outlet
         for i in range(i_left, i_right+1):
-            if compartment_connections[inlets_and_outlets[i_left][1]] < 0:
+            if compartment_connections[inlets_and_outlets[i][1]] < 0:
                 raise AssertionError(f"Domain inlet/outlets for compartment {id_compartment} were not ordered properly")
 
     return inlets_and_outlets
